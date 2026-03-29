@@ -2,14 +2,12 @@
 
 import pygame
 import random
-import time
 
-from eeg.lsl_markers import create_marker_stream, send_marker
+from eeg.lsl_markers import send_marker
 
 
-def run_motor_imagery(screen, trials):
-
-    marker_outlet = create_marker_stream()
+def run_motor_imagery(screen, trials, marker_outlet, recorder):
+    keep_alive = pygame.event.pump
 
     font = pygame.font.SysFont("Arial",120)
     font_end = pygame.font.SysFont("Arial",60)
@@ -24,8 +22,6 @@ def run_motor_imagery(screen, trials):
 
     directions = ["left"] * trials + ["right"] * trials
     random.shuffle(directions)
-
-    total_trials = len(directions)
 
     pygame.mixer.init()
     beep = pygame.mixer.Sound("stimuli/beep.mp3")
@@ -44,7 +40,7 @@ def run_motor_imagery(screen, trials):
 
         send_marker(marker_outlet,"BASELINE")
 
-        time.sleep(5)
+        recorder.record_for_duration(5, on_tick=keep_alive)
 
         # -------------------------
         # PREPARACIÓN
@@ -56,11 +52,11 @@ def run_motor_imagery(screen, trials):
 
         send_marker(marker_outlet,"PREPARE")
 
-        time.sleep(3)
+        recorder.record_for_duration(3, on_tick=keep_alive)
 
         beep.play()
 
-        time.sleep(2)
+        recorder.record_for_duration(2, on_tick=keep_alive)
 
         # -------------------------
         # ESTÍMULO
@@ -82,7 +78,7 @@ def run_motor_imagery(screen, trials):
 
         print("Trial", trial_id, direction)
 
-        time.sleep(5)
+        recorder.record_for_duration(5, on_tick=keep_alive)
 
     # -------------------------
     # FIN DEL EXPERIMENTO
@@ -98,4 +94,4 @@ def run_motor_imagery(screen, trials):
 
     send_marker(marker_outlet,"END")
 
-    time.sleep(5)
+    recorder.record_for_duration(5, on_tick=keep_alive)

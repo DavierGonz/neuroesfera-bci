@@ -3,10 +3,13 @@ import csv
 import time
 import os
 
+from core.config import DATA_DIR
+from eeg.stream_metadata import build_stream_summary
+
 
 class EEGRecorder:
 
-    def __init__(self):
+    def __init__(self, output_path=None):
 
         print("Buscando streams LSL...")
 
@@ -20,7 +23,7 @@ class EEGRecorder:
 
             for s in streams:
 
-                if s.type() == "Data":
+                if s.type() in {"Data", "EEG"}:
                     eeg_stream = s
 
                 if s.type() == "Markers":
@@ -35,22 +38,27 @@ class EEGRecorder:
 
         self.eeg_inlet = StreamInlet(eeg_stream)
         self.marker_inlet = StreamInlet(marker_stream)
+        self.stream_summary = build_stream_summary(eeg_stream)
 
         self.current_marker = ""
         self.current_trial = 0
+        self.channel_labels = self.stream_summary["channel_labels"]
 
-        os.makedirs("data", exist_ok=True)
+        os.makedirs(DATA_DIR, exist_ok=True)
 
-        timestamp = int(time.time())
-        self.filename = f"data/session_{timestamp}.csv"
+        if output_path is None:
+            timestamp = int(time.time())
+            output_path = os.path.join(DATA_DIR, f"session_{timestamp}.csv")
+
+        os.makedirs(os.path.dirname(output_path), exist_ok=True)
+        self.filename = output_path
 
         self.file = open(self.filename, "w", newline="")
         self.writer = csv.writer(self.file)
 
         self.writer.writerow([
             "timestamp",
-            "ch1","ch2","ch3","ch4",
-            "ch5","ch6","ch7","ch8",
+            *self.channel_labels,
             "trial",
             "marker"
         ])
@@ -93,6 +101,20 @@ class EEGRecorder:
             )
 
             self.writer.writerow(row)
+
+    def record_for_duration(self, duration, poll_interval=0.004, on_tick=None):
+
+        start = time.time()
+
+        while time.time() - start < duration:
+
+            self.update_marker()
+            self.record_sample()
+
+            if on_tick is not None:
+                on_tick()
+
+            time.sleep(poll_interval)
 
     # ---------------------------------------
 

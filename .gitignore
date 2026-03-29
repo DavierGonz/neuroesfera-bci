@@ -9,9 +9,9 @@ __pycache__/
 .vscode/
 
 # datos generados
-data/*.csv
-data/logs/
-data/datasets/
+dataset/
+*.xdf
+*_summary.json
 
 # sistema
 .DS_Store
