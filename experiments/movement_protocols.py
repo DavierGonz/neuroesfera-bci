@@ -2,7 +2,7 @@ import random
 import time
 from pathlib import Path
 
-from psychopy import sound, visual
+from psychopy import event, sound, visual
 
 from eeg.lsl_markers import send_marker
 from experiments.trial_sequences import (
@@ -12,7 +12,7 @@ from experiments.trial_sequences import (
     STAGE_STIMULUS,
     TRIAL_SEQUENCES,
 )
-from gui.ui_theme import BG_COLOR, TEXT_PRIMARY
+from gui.ui_theme import BG_COLOR, BUTTON_MUTED, PANEL_BORDER, TEXT_PRIMARY
 
 
 MAX_CONSECUTIVE_CLASS_REPEATS = 3
@@ -22,6 +22,56 @@ LEG_WORDS = ["CAMINAR", "MARCHAR", "PATEAR", "SALTAR", "SENTAR"]
 
 ARM_VIDEO_PREFIXES = ("aplaudir", "conectar", "cortar", "escribir", "lanzar")
 LEG_VIDEO_PREFIXES = ("caminar", "marchar", "patear", "saltar", "sentar")
+
+
+class TrialSessionAbort(Exception):
+    pass
+
+
+class AbortControl:
+    def __init__(self, window):
+        self.mouse = event.Mouse(win=window, visible=True)
+        self._mouse_was_down = False
+        self.shape = visual.Rect(
+            win=window,
+            pos=(0.38, 0.455),
+            width=0.18,
+            height=0.045,
+            units="height",
+            fillColor=BUTTON_MUTED,
+            lineColor=PANEL_BORDER,
+            colorSpace="rgb255",
+            lineWidth=2,
+        )
+        self.text = visual.TextStim(
+            win=window,
+            text="Finalizar",
+            pos=(0.38, 0.455),
+            units="height",
+            height=0.022,
+            color=TEXT_PRIMARY,
+            colorSpace="rgb255",
+            bold=True,
+            font="Segoe UI",
+        )
+
+    def draw(self):
+        self.shape.draw()
+        self.text.draw()
+
+    def was_requested(self):
+        if "escape" in event.getKeys(keyList=["escape"]):
+            return True
+
+        left_down = bool(self.mouse.getPressed()[0])
+        clicked = (
+            left_down
+            and not self._mouse_was_down
+            and self.shape.contains(self.mouse.getPos())
+        )
+        self._mouse_was_down = left_down
+
+        return clicked
 
 
 def run_motor_imagery(window, trials, marker_outlet, recorder, target_key, stimulus_gender):
@@ -92,63 +142,76 @@ def _run_protocol(
 
     cross = _text_stim(window, "+", height=0.16, font="Arial")
     end_text = _text_stim(window, "Fin del experimento", height=0.08)
+    abort_text = _text_stim(window, "Sesion finalizada", height=0.08)
+    abort_control = AbortControl(window)
     mo_movie_paths = _prepare_mo_movie_paths(trial_plan, target_key, stimulus_gender)
     movie_cache = _build_movie_cache(window, mo_movie_paths.values())
 
     send_marker(marker_outlet, f"TARGET_{target_key.upper()}")
     send_marker(marker_outlet, f"GENDER_{stimulus_gender.upper()}")
-    _draw_stage(window)
+    _draw_stage(window, abort_control=abort_control)
 
     try:
-        for trial_id, (modality, class_key) in enumerate(trial_plan, start=1):
-            stimulus, task_marker, cleanup = _build_task_stimulus(
-                window,
-                modality,
-                class_key,
-                target_key,
-                stimulus_gender,
-                movie_cache,
-                mo_movie_paths.get(trial_id - 1),
-            )
-            stimulus_cleaned = False
+        ended_early = False
 
-            def cleanup_stimulus():
-                nonlocal stimulus_cleaned
+        try:
+            for trial_id, (modality, class_key) in enumerate(trial_plan, start=1):
+                stimulus, task_marker, cleanup = _build_task_stimulus(
+                    window,
+                    modality,
+                    class_key,
+                    target_key,
+                    stimulus_gender,
+                    movie_cache,
+                    mo_movie_paths.get(trial_id - 1),
+                )
+                stimulus_cleaned = False
 
-                if stimulus_cleaned:
-                    return
+                def cleanup_stimulus():
+                    nonlocal stimulus_cleaned
 
-                _stop_stimulus(stimulus)
-                cleanup()
-                stimulus_cleaned = True
+                    if stimulus_cleaned:
+                        return
 
-            send_marker(marker_outlet, f"TRIAL_{trial_id}")
-            send_marker(marker_outlet, f"CLASS_{class_key.upper()}")
+                    _stop_stimulus(stimulus)
+                    cleanup()
+                    stimulus_cleaned = True
 
-            try:
-                for stage_config in trial_sequence:
-                    stage_marker, duration, stage_type, stage_options = _parse_stage_config(
-                        stage_config
-                    )
-                    _run_trial_stage(
-                        window,
-                        recorder,
-                        marker_outlet,
-                        stage_marker,
-                        duration,
-                        stage_type,
-                        stimulus=stimulus,
-                        task_marker=task_marker,
-                        cross=cross,
-                        stage_options=stage_options,
-                        cleanup_stimulus=cleanup_stimulus,
-                    )
-            finally:
-                cleanup_stimulus()
+                send_marker(marker_outlet, f"TRIAL_{trial_id}")
+                send_marker(marker_outlet, f"CLASS_{class_key.upper()}")
 
-        _draw_stage(window, [end_text])
+                try:
+                    for stage_config in trial_sequence:
+                        stage_marker, duration, stage_type, stage_options = (
+                            _parse_stage_config(stage_config)
+                        )
+                        _run_trial_stage(
+                            window,
+                            recorder,
+                            marker_outlet,
+                            stage_marker,
+                            duration,
+                            stage_type,
+                            stimulus=stimulus,
+                            task_marker=task_marker,
+                            cross=cross,
+                            stage_options=stage_options,
+                            cleanup_stimulus=cleanup_stimulus,
+                            abort_control=abort_control,
+                        )
+                finally:
+                    cleanup_stimulus()
+        except TrialSessionAbort:
+            ended_early = True
+            send_marker(marker_outlet, "END_EARLY")
+
+        final_text = abort_text if ended_early else end_text
+        _draw_stage(window, [final_text])
         send_marker(marker_outlet, "END")
-        recorder.record_for_duration(END_SECONDS, on_tick=lambda: _draw_stage(window, [end_text]))
+        recorder.record_for_duration(
+            END_SECONDS,
+            on_tick=lambda: _draw_stage(window, [final_text]),
+        )
     finally:
         _unload_movie_cache(movie_cache)
 
@@ -184,26 +247,29 @@ def _run_trial_stage(
     cross,
     stage_options,
     cleanup_stimulus,
+    abort_control,
 ):
     if stage_type == STAGE_BLANK:
-        _draw_stage(window)
+        _draw_stage(window, abort_control=abort_control)
         send_marker(marker_outlet, stage_marker)
         _record_stage(
             recorder,
             duration,
-            on_tick=lambda: _draw_stage(window),
+            on_tick=lambda: _draw_stage(window, abort_control=abort_control),
             beep_config=stage_options.get("beep"),
+            abort_control=abort_control,
         )
         return
 
     if stage_type == STAGE_CROSS:
-        _draw_stage(window, [cross])
+        _draw_stage(window, [cross], abort_control=abort_control)
         send_marker(marker_outlet, stage_marker)
         _record_stage(
             recorder,
             duration,
-            on_tick=lambda: _draw_stage(window, [cross]),
+            on_tick=lambda: _draw_stage(window, [cross], abort_control=abort_control),
             beep_config=stage_options.get("beep"),
+            abort_control=abort_control,
         )
         return
 
@@ -218,8 +284,10 @@ def _run_trial_stage(
                 on_tick=lambda current_stimulus=stimulus: _draw_stage(
                     window,
                     [current_stimulus],
+                    abort_control=abort_control,
                 ),
                 beep_config=stage_options.get("beep"),
+                abort_control=abort_control,
             )
         finally:
             cleanup_stimulus()
@@ -228,7 +296,7 @@ def _run_trial_stage(
     raise ValueError(f"Tipo de fase no soportado: {stage_type}")
 
 
-def _record_stage(recorder, duration, on_tick, beep_config=None):
+def _record_stage(recorder, duration, on_tick, beep_config=None, abort_control=None):
     beep_sound = _build_beep(beep_config) if beep_config else None
     beep_played = False
     stage_start = None
@@ -246,6 +314,9 @@ def _record_stage(recorder, duration, on_tick, beep_config=None):
                 beep_played = True
 
         on_tick()
+
+        if abort_control is not None and abort_control.was_requested():
+            raise TrialSessionAbort()
 
     recorder.record_for_duration(duration, on_tick=tick)
 
@@ -278,8 +349,8 @@ def _build_task_stimulus(
 
 def _build_mi_stimulus(window, class_key, target_key):
     if target_key == "left_vs_right":
-        text = "IZQUIERDA" if class_key == "left" else "DERECHA"
-        stimulus = _text_stim(window, text, height=0.075)
+        text = "←" if class_key == "left" else "→"
+        stimulus = _text_stim(window, text, height=0.16, font="Segoe UI Symbol")
     else:
         text = "BRAZOS" if class_key == "arm" else "PIERNAS"
         stimulus = _text_stim(window, text, height=0.075)
@@ -457,11 +528,14 @@ def _text_stim(window, text, height, font="Segoe UI"):
     )
 
 
-def _draw_stage(window, stimuli=None):
+def _draw_stage(window, stimuli=None, abort_control=None):
     window.color = BG_COLOR
 
     for stimulus in stimuli or []:
         stimulus.draw()
+
+    if abort_control is not None:
+        abort_control.draw()
 
     window.flip()
 
