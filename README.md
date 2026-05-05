@@ -78,6 +78,18 @@ Para correr la aplicacion:
 .\.venv\Scripts\python.exe main.py
 ```
 
+Para revisar los trials sin casco, sin LabRecorder y sin generar XDF:
+
+```bash
+.\.venv\Scripts\python.exe main.py --preview
+```
+
+Para hacer una prueba rapida con menos trials por clase:
+
+```bash
+.\.venv\Scripts\python.exe main.py --preview --preview-trials-per-class 1
+```
+
 Para listar streams LSL disponibles:
 
 ```bash

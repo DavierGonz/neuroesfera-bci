@@ -223,6 +223,22 @@ Para iniciar NeuroEsfera BCI:
 .\.venv\Scripts\python.exe main.py
 ```
 
+Para revisar la estructura visual de los trials sin casco, sin Unicorn LSL, sin
+LabRecorder y sin generar archivos XDF, usar el modo preview:
+
+```powershell
+.\.venv\Scripts\python.exe main.py --preview
+```
+
+Para una prueba mas corta mientras se ajusta la secuencia experimental:
+
+```powershell
+.\.venv\Scripts\python.exe main.py --preview --preview-trials-per-class 1
+```
+
+Este modo muestra los mismos menus, estimulos, videos, cruz, pantalla negra y
+beep del experimento real, pero usa marcadores y grabacion simulados.
+
 Al abrirse la aplicacion, PsychoPy puede mostrar el mensaje:
 
 ```text
