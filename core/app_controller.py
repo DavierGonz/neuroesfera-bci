@@ -83,16 +83,7 @@ class Button:
 
 
 class AppController:
-    def __init__(self, preview_mode=False, preview_trials_per_class=None):
-        if preview_trials_per_class is not None and preview_trials_per_class < 1:
-            raise ValueError("--preview-trials-per-class debe ser mayor o igual a 1.")
-
-        self.preview_mode = preview_mode
-        self.trials_per_class = (
-            preview_trials_per_class
-            if preview_mode and preview_trials_per_class is not None
-            else DEFAULT_TRIALS_PER_CLASS
-        )
+    def __init__(self):
         self.window_size = self._resolve_window_size()
         monitor = self._build_monitor()
 
@@ -114,7 +105,7 @@ class AppController:
         self.protocol_setup = {
             "target_key": "arm_vs_leg",
             "stimulus_gender": "hombre",
-            "trials_per_class": self.trials_per_class,
+            "trials_per_class": DEFAULT_TRIALS_PER_CLASS,
             "subject_number": 1,
         }
         self.selected_protocol_key = None
@@ -225,13 +216,7 @@ class AppController:
 
         if "space" in keys and protocol["implemented"]:
             trials_per_class = self.pending_trials_per_class
-            loading_subtitle = (
-                "Sin casco, sin LabRecorder y sin archivo XDF"
-                if self.preview_mode
-                else "Abriendo LabRecorder y cargando estimulos"
-            )
-            loading_title = "Preparando preview" if self.preview_mode else "Preparando sesion"
-            self._draw_loading(loading_title, loading_subtitle)
+            self._draw_loading("Preparando sesion", "Abriendo LabRecorder y cargando estimulos")
             self.window.flip()
             self._run_session(
                 self.pending_session_config,
@@ -311,7 +296,7 @@ class AppController:
         )
 
     def _run_session(self, session_config, experiment_runner):
-        session = ExperimentSession(session_config, preview_mode=self.preview_mode)
+        session = ExperimentSession(session_config)
         self.recorder = session.recorder
 
         try:
@@ -355,14 +340,6 @@ class AppController:
             0.023,
             TEXT_SECONDARY,
         )
-        if self.preview_mode:
-            self._draw_text(
-                "MODO PREVIEW: no requiere casco ni genera XDF",
-                (0.0, 0.245),
-                0.018,
-                TEXT_ACCENT,
-                bold=True,
-            )
         self._draw_text(
             "Tipo de clasificacion",
             (0.0, 0.17),
@@ -405,20 +382,12 @@ class AppController:
             wrap_width=panel["inner_width"],
         )
         self._draw_text(
-            f"Trials por clase: {self.trials_per_class}",
+            f"Trials por clase fijos: {DEFAULT_TRIALS_PER_CLASS}",
             self._setup_panel_point(0.5, 0.27),
             0.022,
             TEXT_SECONDARY,
             bold=True,
         )
-        if self.preview_mode:
-            self._draw_text(
-                "Preview visual: no abre LabRecorder ni busca streams LSL",
-                self._setup_panel_point(0.5, 0.315),
-                0.016,
-                TEXT_ACCENT,
-                bold=True,
-            )
 
         for button in buttons.values():
             button.draw()
@@ -494,11 +463,7 @@ class AppController:
             f"Sujeto: {config.subject_number:02d}",
             f"Sesion automatica: {config.session_number:02d}",
             f"Trials totales: {config.total_trials}",
-            (
-                "Archivo: no se generara en preview"
-                if self.preview_mode
-                else f"Archivo: {config.build_basename()}.xdf"
-            ),
+            f"Archivo: {config.build_basename()}.xdf",
         ]
 
         for index, text in enumerate(details):
@@ -512,9 +477,7 @@ class AppController:
             )
 
         hint = (
-            "Presiona espacio para iniciar preview"
-            if self.preview_mode and protocol["implemented"]
-            else "Presiona espacio para iniciar"
+            "Presiona espacio para iniciar"
             if protocol["implemented"]
             else "Protocolo en construccion. Usa ESC para volver."
         )
@@ -522,7 +485,6 @@ class AppController:
 
     def _draw_session_complete(self):
         result = self.last_session_result
-        is_preview = result.get("backend") == "preview"
         channel_labels = result.get("channel_labels", [])
         channel_count = int(result.get("channel_count", 0) or 0)
 
@@ -539,19 +501,9 @@ class AppController:
 
         self.window.color = BG_COLOR
         self._draw_panel((0.0, -0.02), (0.80, 0.72))
+        self._draw_text("Sesion guardada", (0.0, 0.25), 0.055, SUCCESS_COLOR, bold=True)
         self._draw_text(
-            "Preview finalizado" if is_preview else "Sesion guardada",
-            (0.0, 0.25),
-            0.055,
-            SUCCESS_COLOR,
-            bold=True,
-        )
-        self._draw_text(
-            (
-                "Los trials se mostraron sin grabar datos"
-                if is_preview
-                else "La adquisicion termino correctamente y el archivo ya esta listo"
-            ),
+            "La adquisicion termino correctamente y el archivo ya esta listo",
             (0.0, 0.18),
             0.02,
             TEXT_SECONDARY,
@@ -559,11 +511,7 @@ class AppController:
 
         details = [
             f"Formato: {result['backend'].upper()}",
-            (
-                "Archivo: no generado en modo preview"
-                if is_preview
-                else f"Archivo: {os.path.basename(result['recording_path'])}"
-            ),
+            f"Archivo: {os.path.basename(result['recording_path'])}",
             f"Objetivo: {result.get('target_name', 'unknown')}",
             f"Sujeto: {int(result.get('subject_number', 0)):02d}",
             f"Sesion: {int(result.get('session_number', 0)):02d}",

@@ -37,30 +37,6 @@ El sistema no realiza clasificacion en tiempo real todavia. Actualmente se enfoc
 15. Al finalizar, el sistema detiene LabRecorder y muestra un resumen de sesion.
 16. El usuario puede inspeccionar el XDF con el notebook o verificar tiempos con `tests/verify_xdf_timing.py`.
 
-## Modo preview para pruebas visuales
-
-Para modificar o revisar la estructura de los trials sin depender del setup EEG,
-la aplicacion puede ejecutarse en modo preview:
-
-```powershell
-.\.venv\Scripts\python.exe main.py --preview
-```
-
-En este modo:
-
-- No se requiere casco encendido.
-- No se requiere Unicorn LSL.
-- No se abre LabRecorder.
-- No se genera archivo XDF.
-- Se muestran los mismos estimulos, videos, beeps y pantallas del protocolo.
-
-Para probar mas rapido, se puede reducir temporalmente el numero de trials por
-clase:
-
-```powershell
-.\.venv\Scripts\python.exe main.py --preview --preview-trials-per-class 1
-```
-
 ## Diagrama de bloques
 
 ```mermaid
@@ -96,22 +72,6 @@ flowchart TD
     S --> K
     M --> T[Archivo XDF]
     T --> U[Notebook / verificador de tiempos]
-```
-
-## Diagrama de preview
-
-```mermaid
-flowchart TD
-    A[main.py --preview] --> B[AppController]
-    B --> C[Menu y configuracion]
-    C --> D[ExperimentSession preview]
-    D --> E[PreviewMarkerOutlet]
-    D --> F[PreviewRecordingBackend]
-    C --> G[Runner del protocolo]
-    G --> H[Presentacion PsychoPy]
-    H --> E
-    H --> F
-    F --> I[Sin archivo XDF]
 ```
 
 ## Componentes principales
