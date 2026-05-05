@@ -1,20 +1,18 @@
-# main.py
-
-import pygame
-
-from core.app_controller import AppController
-from core.config import FULLSCREEN, WINDOW_HEIGHT, WINDOW_TITLE, WINDOW_WIDTH
+import os
+from pathlib import Path
 
 
-pygame.init()
+def main():
+    project_root = Path(__file__).resolve().parent
+    psychopy_appdata = project_root / ".psychopy-appdata"
+    psychopy_appdata.mkdir(exist_ok=True)
+    os.environ["APPDATA"] = str(psychopy_appdata)
 
-flags = pygame.FULLSCREEN if FULLSCREEN else 0
-screen_size = (0, 0) if FULLSCREEN else (WINDOW_WIDTH, WINDOW_HEIGHT)
+    from core.app_controller import AppController
 
-screen = pygame.display.set_mode(screen_size, flags)
-pygame.display.set_caption(WINDOW_TITLE)
+    controller = AppController()
+    controller.run()
 
-clock = pygame.time.Clock()
-controller = AppController(screen, clock)
 
-controller.run()
+if __name__ == "__main__":
+    main()

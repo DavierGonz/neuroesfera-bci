@@ -1,120 +1,299 @@
+import ctypes
+import os
 import sys
 
-import pygame
+from psychopy import core, event, logging as psychopy_logging, monitors, visual
 
+from core.config import FULLSCREEN, WINDOW_HEIGHT, WINDOW_TITLE, WINDOW_WIDTH
+from core.protocol_catalog import (
+    MENU_PROTOCOL_KEYS,
+    STIMULUS_GENDER_KEYS,
+    TARGET_KEYS,
+    get_protocol_config,
+    get_stimulus_gender_config,
+    get_target_config,
+)
 from core.session_config import SessionConfig
 from core.state_manager import AppState
+from eeg.stream_metadata import default_channel_names
+from experiments.action_words import run_action_words
+from experiments.mixed_protocol import run_mixed_protocol
 from experiments.motor_imagery import run_motor_imagery
-from gui.menu import draw_menu, handle_menu_events
-from gui.motor_imagery_setup import (
-    draw_motor_imagery_setup,
-    get_default_motor_imagery_setup,
-    handle_motor_imagery_setup_events,
+from experiments.motor_observation import run_motor_observation
+from gui.ui_theme import (
+    BG_COLOR,
+    BUTTON_ACTIVE,
+    BUTTON_COLOR,
+    BUTTON_MUTED,
+    PANEL_BORDER,
+    PANEL_COLOR,
+    SUCCESS_COLOR,
+    TEXT_ACCENT,
+    TEXT_PRIMARY,
+    TEXT_SECONDARY,
 )
-from gui.session_complete import (
-    draw_session_complete,
-    handle_session_complete_events,
-)
-from gui.session_ready import draw_session_ready, handle_session_ready_events
 from services.experiment_session import ExperimentSession
 
 
+DEFAULT_TRIALS_PER_CLASS = 10
+
+
+class Button:
+    def __init__(
+        self,
+        win,
+        label,
+        center,
+        size,
+        fill_color,
+        text_color=TEXT_PRIMARY,
+        border_color=PANEL_BORDER,
+        text_height=0.038,
+    ):
+        self.label = label
+        self.shape = visual.Rect(
+            win=win,
+            width=size[0],
+            height=size[1],
+            pos=center,
+            units="height",
+            fillColor=fill_color,
+            lineColor=border_color,
+            colorSpace="rgb255",
+            lineWidth=2,
+        )
+        self.text = visual.TextStim(
+            win=win,
+            text=label,
+            pos=center,
+            units="height",
+            height=text_height,
+            color=text_color,
+            colorSpace="rgb255",
+            bold=True,
+            font="Segoe UI",
+        )
+
+    def draw(self):
+        self.shape.draw()
+        self.text.draw()
+
+    def contains(self, mouse):
+        return self.shape.contains(mouse.getPos())
+
+
 class AppController:
-    def __init__(self, screen, clock):
-        self.screen = screen
-        self.clock = clock
+    def __init__(self):
+        self.window_size = self._resolve_window_size()
+        monitor = self._build_monitor()
+
+        self.window = visual.Window(
+            size=self.window_size,
+            fullscr=FULLSCREEN,
+            color=BG_COLOR,
+            colorSpace="rgb255",
+            units="height",
+            allowGUI=not FULLSCREEN,
+            waitBlanking=True,
+            title=WINDOW_TITLE,
+            monitor=monitor,
+        )
+        self.mouse = event.Mouse(win=self.window, visible=True)
+        self._mouse_was_down = False
         self.state = AppState.MENU
         self.recorder = None
-        self.motor_imagery_setup = get_default_motor_imagery_setup()
+        self.protocol_setup = {
+            "target_key": "arm_vs_leg",
+            "stimulus_gender": "hombre",
+            "trials_per_class": DEFAULT_TRIALS_PER_CLASS,
+            "subject_number": 1,
+        }
+        self.selected_protocol_key = None
         self.pending_session_config = None
         self.pending_trials_per_class = None
+        self._setup_preview_cache = None
         self.last_session_result = None
+        self.running = True
 
     def run(self):
-        while True:
-            self._draw_current_screen()
-            pygame.display.flip()
+        while self.running:
+            if self.state == AppState.MENU:
+                self._run_menu_frame()
+            elif self.state == AppState.PROTOCOL_SETUP:
+                self._run_protocol_setup_frame()
+            elif self.state == AppState.PROTOCOL_READY:
+                self._run_protocol_ready_frame()
+            elif self.state == AppState.SESSION_COMPLETE:
+                self._run_session_complete_frame()
 
-            for event in pygame.event.get():
-                if event.type == pygame.QUIT:
-                    self._shutdown()
+            self.window.flip()
 
-                self._handle_event(event)
+    def _run_menu_frame(self):
+        buttons = self._menu_buttons()
+        self._draw_menu(buttons)
+        clicked = self._poll_button_click(buttons)
+        keys = event.getKeys(keyList=["escape"])
 
-            self.clock.tick(250)
+        if "escape" in keys:
+            self._shutdown()
+        elif clicked and clicked.startswith("target:"):
+            self.protocol_setup["target_key"] = clicked.split(":", 1)[1]
+        elif clicked in MENU_PROTOCOL_KEYS:
+            self.selected_protocol_key = clicked
+            self.pending_session_config = None
+            self.pending_trials_per_class = None
+            self.state = AppState.PROTOCOL_SETUP
+        elif clicked == "exit":
+            self._shutdown()
 
-    def _draw_current_screen(self):
-        if self.state == AppState.MENU:
-            draw_menu(self.screen)
-        elif self.state == AppState.MOTOR_IMAGERY_SETUP:
-            draw_motor_imagery_setup(self.screen, self.motor_imagery_setup)
-        elif self.state == AppState.MOTOR_IMAGERY_READY and self.pending_session_config:
-            draw_session_ready(self.screen, self.pending_session_config)
-        elif self.state == AppState.SESSION_COMPLETE and self.last_session_result:
-            draw_session_complete(self.screen, self.last_session_result)
-
-    def _handle_event(self, event):
-        if self.state == AppState.MENU:
-            self._handle_menu_event(event)
-        elif self.state == AppState.MOTOR_IMAGERY_SETUP:
-            self._handle_motor_imagery_setup_event(event)
-        elif self.state == AppState.MOTOR_IMAGERY_READY:
-            self._handle_motor_imagery_ready_event(event)
-        elif self.state == AppState.SESSION_COMPLETE:
-            self._handle_session_complete_event(event)
-
-    def _handle_menu_event(self, event):
-        new_state = handle_menu_events(event)
-
-        if new_state is not None:
-            self.state = new_state
-
-    def _handle_motor_imagery_setup_event(self, event):
-        result = handle_motor_imagery_setup_events(event, self.motor_imagery_setup)
-
-        if result is None:
+    def _run_protocol_setup_frame(self):
+        if self.selected_protocol_key is None:
+            self.state = AppState.MENU
             return
 
-        action = result[0]
+        buttons = self._protocol_setup_buttons()
+        self._draw_protocol_setup(buttons)
+        clicked = self._poll_button_click(buttons)
+        keys = event.getKeys(keyList=["escape"])
 
-        if action == "update":
-            self.motor_imagery_setup = result[1]
-        elif action == "ready":
-            self.pending_session_config = result[1]
-            self.pending_trials_per_class = result[2]
-            self.state = AppState.MOTOR_IMAGERY_READY
-        elif action == "back":
-            self.state = result[1]
+        if "escape" in keys:
+            self.selected_protocol_key = None
+            self.pending_session_config = None
+            self.pending_trials_per_class = None
+            self.state = AppState.MENU
+            return
 
-    def _handle_motor_imagery_ready_event(self, event):
-        result = handle_session_ready_events(event)
+        if clicked is None:
+            return
 
-        if result == "start" and self.pending_session_config is not None:
+        if clicked.startswith("gender:"):
+            self.protocol_setup["stimulus_gender"] = clicked.split(":", 1)[1]
+            return
+
+        if clicked == "subject_minus":
+            self.protocol_setup["subject_number"] = max(
+                1, self.protocol_setup["subject_number"] - 1
+            )
+            return
+
+        if clicked == "subject_plus":
+            self.protocol_setup["subject_number"] += 1
+            return
+
+        if clicked == "continue":
+            self.pending_session_config = SessionConfig.for_protocol(
+                self.selected_protocol_key,
+                self.protocol_setup["target_key"],
+                self.protocol_setup["stimulus_gender"],
+                self.protocol_setup["subject_number"],
+                self.protocol_setup["trials_per_class"],
+            )
+            self.pending_trials_per_class = self.protocol_setup["trials_per_class"]
+            self.state = AppState.PROTOCOL_READY
+            event.clearEvents("keyboard")
+            return
+
+        if clicked == "back":
+            self.selected_protocol_key = None
+            self.pending_session_config = None
+            self.pending_trials_per_class = None
+            self.state = AppState.MENU
+
+    def _run_protocol_ready_frame(self):
+        if self.selected_protocol_key is None or self.pending_session_config is None:
+            self.state = AppState.MENU
+            return
+
+        self._draw_protocol_ready()
+        keys = event.getKeys(keyList=["space", "escape"])
+        protocol = get_protocol_config(self.selected_protocol_key)
+
+        if "escape" in keys:
+            self.pending_session_config = None
+            self.pending_trials_per_class = None
+            self.state = AppState.PROTOCOL_SETUP
+            return
+
+        if "space" in keys and protocol["implemented"]:
             trials_per_class = self.pending_trials_per_class
-
+            self._draw_loading("Preparando sesion", "Abriendo LabRecorder y cargando estimulos")
+            self.window.flip()
             self._run_session(
                 self.pending_session_config,
-                lambda session: run_motor_imagery(
-                    self.screen,
+                self._build_experiment_runner(
+                    self.selected_protocol_key,
                     trials_per_class,
-                    session.marker_outlet,
-                    session.recorder,
-                )
+                    self.pending_session_config.target_slug,
+                    self.pending_session_config.stimulus_gender,
+                ),
             )
             self.pending_session_config = None
             self.pending_trials_per_class = None
             self.state = AppState.SESSION_COMPLETE
-        elif result == AppState.MOTOR_IMAGERY_SETUP:
-            self.pending_session_config = None
-            self.pending_trials_per_class = None
-            self.state = result
+            event.clearEvents("keyboard")
 
-    def _handle_session_complete_event(self, event):
-        result = handle_session_complete_events(event)
+    def _run_session_complete_frame(self):
+        if self.last_session_result is None:
+            self.state = AppState.MENU
+            return
 
-        if result == AppState.MENU:
+        self._draw_session_complete()
+        keys = event.getKeys(keyList=["space", "escape"])
+
+        if "space" in keys or "escape" in keys:
             self.last_session_result = None
-            self.state = result
+            self.selected_protocol_key = None
+            self.state = AppState.MENU
+            event.clearEvents("keyboard")
+
+    def _build_experiment_runner(
+        self,
+        protocol_key,
+        trials_per_class,
+        target_key,
+        stimulus_gender,
+    ):
+        if protocol_key == "motor_imagery":
+            return lambda session: run_motor_imagery(
+                self.window,
+                trials_per_class,
+                session.marker_outlet,
+                session.recorder,
+                target_key,
+                stimulus_gender,
+            )
+        if protocol_key == "action_words":
+            return lambda session: run_action_words(
+                self.window,
+                trials_per_class,
+                session.marker_outlet,
+                session.recorder,
+                target_key,
+                stimulus_gender,
+            )
+        if protocol_key == "motor_observation":
+            return lambda session: run_motor_observation(
+                self.window,
+                trials_per_class,
+                session.marker_outlet,
+                session.recorder,
+                target_key,
+                stimulus_gender,
+            )
+        if protocol_key == "mix":
+            return lambda session: run_mixed_protocol(
+                self.window,
+                trials_per_class,
+                session.marker_outlet,
+                session.recorder,
+                target_key,
+                stimulus_gender,
+            )
+
+        protocol = get_protocol_config(protocol_key)
+        raise NotImplementedError(
+            f"El protocolo {protocol['label']} aun no tiene runner asignado."
+        )
 
     def _run_session(self, session_config, experiment_runner):
         session = ExperimentSession(session_config)
@@ -125,11 +304,465 @@ class AppController:
         finally:
             session.close()
             self.last_session_result = session.session_result
+            self._setup_preview_cache = None
             self.recorder = None
 
     def _shutdown(self):
         if self.recorder:
             self.recorder.close()
+            self.recorder = None
 
-        pygame.quit()
+        self.window.close()
+        core.quit()
         sys.exit()
+
+    def _poll_button_click(self, buttons):
+        left_down = bool(self.mouse.getPressed()[0])
+        clicked = None
+
+        if left_down and not self._mouse_was_down:
+            for key, button in buttons.items():
+                if button.contains(self.mouse):
+                    clicked = key
+                    break
+
+        self._mouse_was_down = left_down
+        return clicked
+
+    def _draw_menu(self, buttons):
+        selected_target = get_target_config(self.protocol_setup["target_key"])
+        self.window.color = BG_COLOR
+        self._draw_panel((0.0, 0.33), (0.78, 0.20))
+        self._draw_text("NeuroEsfera BCI", (0.0, 0.38), 0.055, TEXT_PRIMARY, bold=True)
+        self._draw_text(
+            f"Objetivo seleccionado: {selected_target['label']}",
+            (0.0, 0.30),
+            0.023,
+            TEXT_SECONDARY,
+        )
+        self._draw_text(
+            "Tipo de clasificacion",
+            (0.0, 0.17),
+            0.028,
+            TEXT_PRIMARY,
+            bold=True,
+        )
+        self._draw_text(
+            "Experimento",
+            (0.0, -0.01),
+            0.028,
+            TEXT_PRIMARY,
+            bold=True,
+        )
+
+        for button in buttons.values():
+            button.draw()
+
+    def _draw_protocol_setup(self, buttons):
+        protocol = get_protocol_config(self.selected_protocol_key)
+        target = get_target_config(self.protocol_setup["target_key"])
+        gender = get_stimulus_gender_config(self.protocol_setup["stimulus_gender"])
+        setup = self.protocol_setup
+        panel = self._setup_panel_metrics()
+        self.window.color = BG_COLOR
+        self._draw_panel(panel["center"], panel["size"])
+        self._draw_text(
+            protocol["setup_title"],
+            self._setup_panel_point(0.5, 0.06),
+            0.042,
+            TEXT_PRIMARY,
+            bold=True,
+            wrap_width=panel["inner_width"],
+        )
+        self._draw_text(
+            f"{protocol['label']} | {target['label']} | Videos MO: {gender['label']}",
+            self._setup_panel_point(0.5, 0.16),
+            0.018,
+            TEXT_SECONDARY,
+            wrap_width=panel["inner_width"],
+        )
+        self._draw_text(
+            f"Trials por clase fijos: {DEFAULT_TRIALS_PER_CLASS}",
+            self._setup_panel_point(0.5, 0.27),
+            0.022,
+            TEXT_SECONDARY,
+            bold=True,
+        )
+
+        for button in buttons.values():
+            button.draw()
+
+        self._draw_stepper(
+            "Numero de sujeto",
+            setup["subject_number"],
+            label_pos=self._setup_panel_point(0.5, 0.40),
+            value_pos=self._setup_panel_point(0.5, 0.51),
+        )
+        self._draw_text(
+            "Genero de videos",
+            self._setup_panel_point(0.5, 0.62),
+            0.026,
+            TEXT_PRIMARY,
+            bold=True,
+        )
+
+        total_trials = setup["trials_per_class"] * protocol["total_trials_multiplier"]
+        preview_config = self._get_setup_preview_config()
+        preview = preview_config.build_basename()
+
+        self._draw_text(
+            f"Trials totales: {total_trials}",
+            self._setup_panel_point(0.5, 0.78),
+            0.022,
+            TEXT_SECONDARY,
+            bold=True,
+        )
+        protocol_hint = (
+            "Protocolo implementado"
+            if protocol["implemented"]
+            else "Protocolo en menu, ejecucion pendiente"
+        )
+        self._draw_text(
+            protocol_hint,
+            self._setup_panel_point(0.5, 0.83),
+            0.017,
+            TEXT_SECONDARY,
+        )
+        self._draw_text(
+            f"Sesion automatica: {preview_config.session_number:02d}",
+            self._setup_panel_point(0.5, 0.88),
+            0.017,
+            TEXT_SECONDARY,
+            bold=True,
+        )
+        self._draw_text(
+            preview,
+            self._setup_panel_point(0.5, 0.93),
+            0.017,
+            TEXT_ACCENT,
+            wrap_width=panel["inner_width"] * 0.84,
+        )
+
+    def _draw_protocol_ready(self):
+        protocol = get_protocol_config(self.selected_protocol_key)
+        config = self.pending_session_config
+        self.window.color = BG_COLOR
+        self._draw_panel((0.0, -0.02), (0.76, 0.68))
+        self._draw_text("Preparado para iniciar", (0.0, 0.25), 0.056, TEXT_PRIMARY, bold=True)
+        self._draw_text(
+            "Verifica la configuracion y comienza cuando todo este listo",
+            (0.0, 0.18),
+            0.02,
+            TEXT_SECONDARY,
+        )
+
+        details = [
+            f"Protocolo: {config.protocol_name}",
+            f"Objetivo: {config.target_name}",
+            f"Videos MO: {get_stimulus_gender_config(config.stimulus_gender)['label']}",
+            f"Sujeto: {config.subject_number:02d}",
+            f"Sesion automatica: {config.session_number:02d}",
+            f"Trials totales: {config.total_trials}",
+            f"Archivo: {config.build_basename()}.xdf",
+        ]
+
+        for index, text in enumerate(details):
+            self._draw_text(
+                text,
+                (-0.28, 0.11 - index * 0.055),
+                0.026,
+                TEXT_SECONDARY,
+                align="left",
+                wrap_width=0.58,
+            )
+
+        hint = (
+            "Presiona espacio para iniciar"
+            if protocol["implemented"]
+            else "Protocolo en construccion. Usa ESC para volver."
+        )
+        self._draw_text(hint, (0.0, -0.29), 0.03, TEXT_ACCENT, bold=True)
+
+    def _draw_session_complete(self):
+        result = self.last_session_result
+        channel_labels = result.get("channel_labels", [])
+        channel_count = int(result.get("channel_count", 0) or 0)
+
+        if channel_labels:
+            channels_text = ", ".join(channel_labels)
+        elif channel_count:
+            placeholder_labels = default_channel_names(min(channel_count, 8))
+            channels_text = (
+                f"{', '.join(placeholder_labels)} "
+                "(mapeo configurado del proyecto; LSL sin labels)"
+            )
+        else:
+            channels_text = "sin labels en el stream LSL"
+
+        self.window.color = BG_COLOR
+        self._draw_panel((0.0, -0.02), (0.80, 0.72))
+        self._draw_text("Sesion guardada", (0.0, 0.25), 0.055, SUCCESS_COLOR, bold=True)
+        self._draw_text(
+            "La adquisicion termino correctamente y el archivo ya esta listo",
+            (0.0, 0.18),
+            0.02,
+            TEXT_SECONDARY,
+        )
+
+        details = [
+            f"Formato: {result['backend'].upper()}",
+            f"Archivo: {os.path.basename(result['recording_path'])}",
+            f"Objetivo: {result.get('target_name', 'unknown')}",
+            f"Sujeto: {int(result.get('subject_number', 0)):02d}",
+            f"Sesion: {int(result.get('session_number', 0)):02d}",
+            f"EEG stream: {result['stream_name']}",
+            f"Canales: {channels_text}",
+        ]
+
+        for index, text in enumerate(details):
+            self._draw_text(
+                text,
+                (-0.29, 0.10 - index * 0.060),
+                0.023,
+                TEXT_SECONDARY,
+                align="left",
+                wrap_width=0.60,
+            )
+
+        self._draw_text(
+            "Presiona espacio para volver al menu",
+            (0.0, -0.33),
+            0.03,
+            TEXT_ACCENT,
+            bold=True,
+        )
+
+    def _draw_loading(self, title, subtitle):
+        self.window.color = BG_COLOR
+        self._draw_panel((0.0, -0.02), (0.76, 0.46))
+        self._draw_text(title, (0.0, 0.08), 0.052, TEXT_PRIMARY, bold=True)
+        self._draw_text(subtitle, (0.0, 0.00), 0.022, TEXT_SECONDARY)
+        self._draw_text("Un momento...", (0.0, -0.10), 0.026, TEXT_ACCENT, bold=True)
+
+    def _menu_buttons(self):
+        buttons = {}
+        target_x_positions = (-0.13, 0.13)
+
+        for index, target_key in enumerate(TARGET_KEYS):
+            target = get_target_config(target_key)
+            fill = (
+                BUTTON_ACTIVE
+                if self.protocol_setup["target_key"] == target_key
+                else BUTTON_MUTED
+            )
+            buttons[f"target:{target_key}"] = Button(
+                self.window,
+                target["label"],
+                (target_x_positions[index], 0.095),
+                (0.23, 0.06),
+                fill,
+                text_color=BG_COLOR if fill == BUTTON_ACTIVE else TEXT_PRIMARY,
+                text_height=0.028,
+            )
+
+        start_y = -0.10
+        gap = 0.073
+
+        for index, protocol_key in enumerate(MENU_PROTOCOL_KEYS):
+            protocol = get_protocol_config(protocol_key)
+            buttons[protocol_key] = Button(
+                self.window,
+                protocol["menu_label"],
+                (0.0, start_y - index * gap),
+                (0.42, 0.055),
+                BUTTON_COLOR,
+                text_height=0.030,
+            )
+
+        buttons["exit"] = Button(
+            self.window,
+            "Salir",
+            (0.0, start_y - len(MENU_PROTOCOL_KEYS) * gap),
+            (0.42, 0.055),
+            BUTTON_MUTED,
+            text_height=0.030,
+        )
+
+        return buttons
+
+    def _protocol_setup_buttons(self):
+        setup = self.protocol_setup
+        buttons = {}
+
+        buttons["subject_minus"] = Button(
+            self.window,
+            "-",
+            self._setup_panel_point(0.34, 0.51),
+            (0.07, 0.05),
+            BUTTON_MUTED,
+            text_height=0.04,
+        )
+        buttons["subject_plus"] = Button(
+            self.window,
+            "+",
+            self._setup_panel_point(0.66, 0.51),
+            (0.07, 0.05),
+            BUTTON_MUTED,
+            text_height=0.04,
+        )
+
+        for index, gender_key in enumerate(STIMULUS_GENDER_KEYS):
+            gender = get_stimulus_gender_config(gender_key)
+            fill = BUTTON_ACTIVE if setup["stimulus_gender"] == gender_key else BUTTON_MUTED
+            buttons[f"gender:{gender_key}"] = Button(
+                self.window,
+                gender["label"],
+                self._setup_panel_point(0.38 + index * 0.24, 0.69),
+                (0.18, 0.048),
+                fill,
+                text_color=BG_COLOR if fill == BUTTON_ACTIVE else TEXT_PRIMARY,
+                text_height=0.026,
+            )
+
+        buttons["back"] = Button(
+            self.window,
+            "Volver",
+            self._setup_panel_point(0.20, 0.975),
+            (0.22, 0.04),
+            BUTTON_MUTED,
+            text_height=0.028,
+        )
+        buttons["continue"] = Button(
+            self.window,
+            "Continuar",
+            self._setup_panel_point(0.80, 0.975),
+            (0.24, 0.04),
+            BUTTON_COLOR,
+            text_height=0.028,
+        )
+
+        return buttons
+
+    def _get_setup_preview_config(self):
+        setup = self.protocol_setup
+        cache_key = (
+            self.selected_protocol_key,
+            setup["target_key"],
+            setup["stimulus_gender"],
+            setup["subject_number"],
+            setup["trials_per_class"],
+        )
+
+        if self._setup_preview_cache and self._setup_preview_cache[0] == cache_key:
+            return self._setup_preview_cache[1]
+
+        preview_config = SessionConfig.for_protocol(*cache_key)
+        self._setup_preview_cache = (cache_key, preview_config)
+
+        return preview_config
+
+    def _draw_stepper(self, label, value, label_pos, value_pos):
+        self._draw_text(label, label_pos, 0.025, TEXT_PRIMARY, bold=True, wrap_width=0.30)
+        self._draw_text(f"{value:02d}", value_pos, 0.046, TEXT_PRIMARY, bold=True)
+
+    def _draw_panel(self, center, size):
+        visual.Rect(
+            win=self.window,
+            pos=center,
+            width=size[0],
+            height=size[1],
+            units="height",
+            fillColor=PANEL_COLOR,
+            lineColor=PANEL_BORDER,
+            colorSpace="rgb255",
+            lineWidth=2,
+        ).draw()
+
+    def _setup_panel_metrics(self):
+        center = (0.0, 0.0)
+        size = (0.84, 0.96)
+        pad_x = 0.10
+        pad_top = 0.06
+        pad_bottom = 0.06
+        left = center[0] - size[0] / 2 + pad_x
+        right = center[0] + size[0] / 2 - pad_x
+        top = center[1] + size[1] / 2 - pad_top
+        bottom = center[1] - size[1] / 2 + pad_bottom
+        return {
+            "center": center,
+            "size": size,
+            "left": left,
+            "right": right,
+            "top": top,
+            "bottom": bottom,
+            "inner_width": right - left,
+            "inner_height": top - bottom,
+        }
+
+    def _setup_panel_point(self, x_fraction, y_fraction):
+        panel = self._setup_panel_metrics()
+        x = panel["left"] + x_fraction * panel["inner_width"]
+        y = panel["top"] - y_fraction * panel["inner_height"]
+        return (x, y)
+
+    def _draw_text(
+        self,
+        text,
+        pos,
+        height,
+        color,
+        bold=False,
+        wrap_width=0.72,
+        align="center",
+    ):
+        anchor_horiz = "left" if align == "left" else "center"
+        visual.TextStim(
+            win=self.window,
+            text=text,
+            pos=pos,
+            units="height",
+            height=height,
+            color=color,
+            colorSpace="rgb255",
+            bold=bold,
+            font="Segoe UI",
+            wrapWidth=wrap_width,
+            alignText=align,
+            anchorHoriz=anchor_horiz,
+            anchorVert="center",
+        ).draw()
+
+    def _resolve_window_size(self):
+        if not FULLSCREEN:
+            return (WINDOW_WIDTH, WINDOW_HEIGHT)
+
+        try:
+            user32 = ctypes.windll.user32
+            return (user32.GetSystemMetrics(0), user32.GetSystemMetrics(1))
+        except Exception:
+            return (WINDOW_WIDTH, WINDOW_HEIGHT)
+
+    def _build_monitor(self):
+        monitor_name = "NeuroEsferaMonitor"
+        monitor_dir = os.path.join(os.environ["APPDATA"], "psychopy3", "monitors")
+        monitor_file = os.path.join(monitor_dir, f"{monitor_name}.json")
+
+        previous_level = psychopy_logging.console.level
+        should_seed_monitor = not os.path.exists(monitor_file)
+
+        if should_seed_monitor:
+            psychopy_logging.console.setLevel(psychopy_logging.ERROR)
+
+        try:
+            monitor = monitors.Monitor(monitor_name, width=34.5, distance=60.0)
+            monitor.setSizePix(self.window_size)
+            monitor.setNotes("Auto-generated local monitor profile for NeuroEsfera BCI.")
+
+            if should_seed_monitor:
+                os.makedirs(monitor_dir, exist_ok=True)
+                monitor.save()
+        finally:
+            if should_seed_monitor:
+                psychopy_logging.console.setLevel(previous_level)
+
+        return monitor

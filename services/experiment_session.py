@@ -1,6 +1,3 @@
-import os
-import json
-
 from eeg.lsl_markers import create_marker_stream
 from services.recording_backend import create_recording_backend
 
@@ -17,16 +14,17 @@ class ExperimentSession:
         self.session_result = self._load_session_result()
 
     def _load_session_result(self):
-        summary_path = getattr(self.recorder, "summary_path", None)
-
-        if summary_path and os.path.exists(summary_path):
-            with open(summary_path, "r", encoding="utf-8") as summary_file:
-                return json.load(summary_file)
+        stream_summary = getattr(self.recorder, "stream_summary", {})
 
         return {
             "backend": getattr(self.recorder, "backend_name", "unknown"),
             "recording_path": getattr(self.recorder, "filename", "unknown"),
-            "stream_name": "unknown",
-            "stream_type": "unknown",
-            "channel_labels": [],
+            "target_name": self.session_config.target_name,
+            "stimulus_gender": self.session_config.stimulus_gender,
+            "subject_number": self.session_config.subject_number,
+            "session_number": self.session_config.session_number,
+            "stream_name": stream_summary.get("stream_name", "unknown"),
+            "stream_type": stream_summary.get("stream_type", "unknown"),
+            "channel_count": stream_summary.get("channel_count", 0),
+            "channel_labels": stream_summary.get("channel_labels", []),
         }

@@ -12,7 +12,12 @@ __pycache__/
 dataset/
 *.xdf
 *_summary.json
+*.log
+tmp_*
 
 # sistema
 .DS_Store
 Thumbs.db
+
+# psychoPy local state
+.psychopy-appdata/
