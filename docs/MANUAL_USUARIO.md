@@ -2,49 +2,42 @@
 
 ## Informacion del documento
 
-**Software:** NeuroEsfera BCI
-**Version del entorno:** Python 3.10
-**Sistema operativo recomendado:** Windows 10/11
-**Formato de salida:** XDF
-**Equipo EEG:** Unicorn Hybrid Black
-**Librerias principales:** PsychoPy, pylsl
+**Software:** NeuroEsfera BCI  
+**Version del entorno:** Python 3.10  
+**Sistema operativo recomendado:** Windows 10/11  
+**Formato de salida:** XDF  
+**Equipo EEG:** Unicorn Hybrid Black  
+**Librerias principales:** PsychoPy, pylsl, pyxdf  
 **Herramientas externas:** Unicorn LSL, LabRecorder
 
-Este manual describe el procedimiento para preparar el equipo, ejecutar el
-software NeuroEsfera BCI, adquirir una sesion EEG y verificar los archivos
-generados.
+Este manual describe como preparar el sistema, ejecutar los experimentos,
+guardar el dataset y revisar los markers generados por NeuroEsfera BCI.
 
 ## 1. Objetivo del software
 
 NeuroEsfera BCI es una aplicacion experimental para adquisicion de senales EEG.
 El sistema presenta estimulos visuales y auditivos mediante PsychoPy, envia
-marcadores por LSL y guarda la actividad EEG junto con los marcadores en un
-archivo XDF usando LabRecorder.
+markers por LSL y guarda EEG + markers en archivos XDF usando LabRecorder.
 
-El software esta pensado para construir un dataset sincronizado que luego pueda
-ser analizado en notebooks, herramientas EEG o pipelines de clasificacion.
+La version actual esta orientada a tres experimentos:
 
-Actualmente el sistema se enfoca en:
-
-- Adquisicion de EEG.
-- Presentacion controlada de estimulos.
-- Envio de marcadores LSL.
-- Grabacion automatica en XDF.
-- Organizacion del dataset por objetivo, protocolo, genero y sujeto.
-- Verificacion posterior de tiempos mediante timestamps de markers.
+- Experimento 1: Motor Imagery izquierda/derecha.
+- Experimento 2: combinacion de MI, MO y AW para brazos/piernas.
+- Experimento 3: LM con MI, MO, AW y ME para brazos/piernas, organizado por
+  bloques experimentales.
 
 El software no realiza clasificacion BCI online en esta version.
 
 ## 2. Requisitos previos
 
-Antes de ejecutar el experimento se debe contar con:
+Antes de ejecutar una sesion se debe contar con:
 
-- Computador con Windows.
-- Python 3.10 instalado.
+- Windows 10/11.
+- Python 3.10.
 - Entorno virtual `.venv` creado en la carpeta del proyecto.
-- Unicorn Suite Hybrid Black instalado.
-- Unicorn LSL instalado.
-- LabRecorder instalado.
+- Unicorn Suite Hybrid Black.
+- Unicorn LSL.
+- LabRecorder.
 - Casco Unicorn Hybrid Black cargado y funcional.
 - Dongle Bluetooth del casco conectado.
 - Electrodos, gel conductor y accesorios para mastoides.
@@ -55,56 +48,33 @@ La ruta esperada de LabRecorder se configura en:
 core/config.py
 ```
 
-Por defecto, el proyecto espera encontrar LabRecorder en:
+Por defecto:
 
 ```text
 C:\LSL\LabRecorder\LabRecorder.exe
 ```
 
-Si LabRecorder esta en otra carpeta, se debe actualizar la variable
-`LABRECORDER_PATH`.
+Si LabRecorder esta en otra carpeta, actualizar `LABRECORDER_PATH`.
 
 ## 3. Instalacion del entorno
 
-Desde PowerShell, ubicarse en la carpeta del proyecto:
+Desde PowerShell:
 
 ```powershell
 cd C:\Proyects\BCI_workspace\BCI
-```
-
-Crear el entorno virtual con Python 3.10:
-
-```powershell
 py -3.10 -m venv .venv
-```
-
-Activar el entorno:
-
-```powershell
 .\.venv\Scripts\Activate.ps1
-```
-
-Instalar dependencias:
-
-```powershell
 .\.venv\Scripts\python.exe -m pip install -r requirements.txt
 ```
 
-Si PowerShell bloquea la activacion del entorno, ejecutar:
+Si PowerShell bloquea la activacion:
 
 ```powershell
 Set-ExecutionPolicy -Scope Process -ExecutionPolicy RemoteSigned
-```
-
-Luego activar nuevamente:
-
-```powershell
 .\.venv\Scripts\Activate.ps1
 ```
 
 ## 4. Preparacion del casco EEG
-
-### 4.1 Posicion de electrodos
 
 El proyecto usa el siguiente mapeo para los 8 canales EEG del Unicorn Hybrid
 Black:
@@ -120,251 +90,117 @@ Canal 7 -> Oz
 Canal 8 -> PO8
 ```
 
-Tambien se deben ubicar correctamente los electrodos de referencia/mastoides
-izquierdo y derecho, respetando las marcas `L` y `R`.
+Antes de ejecutar el software:
 
-**Figura sugerida 1.** Posicionamiento del casco y electrodos.
-
-### 4.2 Verificacion en Unicorn Suite
-
-Antes de usar Unicorn LSL, se recomienda abrir Unicorn Suite Hybrid Black para
-verificar:
-
-- Que el casco se conecta correctamente.
-- Que los indicadores del dispositivo aparecen en verde.
-- Que las senales EEG se ven estables.
-- Que los electrodos tienen buena impedancia/contacto.
-
-Si la conexion no aparece:
-
-- Revisar que el casco este encendido.
-- Revisar que el dongle Bluetooth este conectado.
-- Cambiar el dongle a otro puerto USB.
-- Reiniciar el casco.
-- Reiniciar el computador si el problema persiste.
-
-**Figura sugerida 2.** Verificacion de conexion en Unicorn Suite.
+1. Encender el casco.
+2. Verificar conexion en Unicorn Suite.
+3. Revisar que las senales EEG se vean estables.
+4. Revisar impedancia/contacto de electrodos.
+5. Verificar mastoides izquierda y derecha.
 
 ## 5. Publicacion del stream EEG por LSL
 
-Cuando el casco ya esta preparado, abrir Unicorn LSL.
+Abrir Unicorn LSL y seguir estos pasos:
 
-Pasos:
-
-1. Seleccionar el dispositivo disponible, por ejemplo `UN-2019.06.47`.
+1. Seleccionar el dispositivo disponible.
 2. Presionar `Open`.
 3. Presionar `Start`.
 4. Mantener Unicorn LSL abierto durante toda la adquisicion.
 
-Se recomienda usar la opcion que publica cada tipo de senal por separado cuando
-este disponible, porque facilita identificar el stream EEG de 8 canales. En
-algunas versiones de Unicorn LSL esta opcion aparece como:
+Se recomienda publicar cada senal por separado cuando Unicorn LSL lo permita.
+Asi suele aparecer un stream EEG de 8 canales:
 
 ```text
-send each signal in one stream
+UN-XXXX_EEG
 ```
 
-Con esta configuracion suelen aparecer streams como:
-
-```text
-UN-2019.06.47_EEG
-UN-2019.06.47_ACC
-UN-2019.06.47_GYR
-UN-2019.06.47_BAT
-UN-2019.06.47_CNT
-UN-2019.06.47_VALID
-```
-
-Si se usa:
-
-```text
-send all signals in one stream
-```
-
-puede aparecer un unico stream tipo `Data` con mas canales. El sistema puede
-grabarlo, pero para inspeccion EEG es mas claro trabajar con el stream separado
-`EEG` cuando este disponible.
-
-**Figura sugerida 3.** Ventana de Unicorn LSL con el casco conectado.
-
-## 6. Verificacion de streams LSL
-
-Antes de iniciar una sesion real, se puede verificar que el stream LSL sea
-visible desde el proyecto.
-
-Ejecutar:
+Para verificar que el stream LSL esta visible:
 
 ```powershell
 .\.venv\Scripts\python.exe tests\inspect_lsl_stream.py
 ```
 
-El script mostrara los streams encontrados, por ejemplo:
+## 6. Ejecucion del software
 
-```text
-Streams encontrados: 7
-
-[0] nombre=UN-2019.06.47_EEG | tipo=EEG | canales=8
-[1] nombre=UN-2019.06.47_ACC | tipo=ACC | canales=3
-[2] nombre=UN-2019.06.47_GYR | tipo=GYR | canales=3
-```
-
-Si no aparece ningun stream:
-
-- Confirmar que Unicorn LSL esta abierto.
-- Confirmar que se presiono `Start`.
-- Confirmar que el casco esta encendido.
-- Repetir el script.
-
-## 7. Ejecucion del software
-
-Para iniciar NeuroEsfera BCI:
+Iniciar NeuroEsfera BCI con:
 
 ```powershell
 .\.venv\Scripts\python.exe main.py
 ```
 
-Al abrirse la aplicacion, PsychoPy puede mostrar el mensaje:
+PsychoPy puede mostrar un mensaje de medicion de frame rate al inicio. Es
+normal.
+
+## 7. Menu principal
+
+El menu principal ya no muestra seleccion manual de `Left vs Right` o
+`Arm vs Leg`. Cada experimento tiene su objetivo definido internamente.
+
+Experimentos disponibles:
 
 ```text
-Attempting to measure frame rate of screen, please wait ...
+Experimento 1 -> Motor Imagery, izquierda/derecha
+Experimento 2 -> MI + MO + AW, brazos/piernas
+Experimento 3 -> LM: MI + MO + AW + ME, brazos/piernas
 ```
 
-Esto es normal. PsychoPy esta midiendo la tasa de refresco de la pantalla para
-sincronizar mejor los estimulos visuales.
+## 8. Configuracion de la sesion
 
-## 8. Menu principal
-
-En el menu principal se selecciona primero el objetivo de clasificacion:
-
-- `Arm vs Leg`: clases brazo vs pierna.
-- `Left vs Right`: clases izquierda vs derecha.
-
-Luego se selecciona el experimento:
-
-- `Experimento 1`: Motor Imagery
-- `Experimento 2`: Action Words
-- `Experimento 3`: Motor Observation
-- `Experimento 4`: MI + AW + MO
-
-**Figura sugerida 4.** Menu principal de NeuroEsfera BCI.
-
-## 9. Configuracion de la sesion
-
-Luego de seleccionar un protocolo, el software muestra la pantalla de
+Luego de seleccionar un experimento, el software muestra la pantalla de
 configuracion.
 
-En esta pantalla se define:
+Parametros disponibles:
 
 - Numero de sujeto.
-- Genero de los videos de Motor Observation.
+- Genero de videos MO cuando el experimento incluye Motor Observation.
+- Bloque experimental solo para Experimento 3.
 
-El numero de trials por clase no se selecciona manualmente. Todos los
-experimentos usan por defecto:
+El numero de sesion se calcula automaticamente leyendo el dataset existente.
 
-```text
-10 trials por clase
-```
+## 9. Bloques del Experimento 3
 
-El numero de sesion ya no se selecciona manualmente. El software lo calcula de
-forma automatica leyendo la carpeta del dataset correspondiente.
-
-Ejemplo:
-
-Si se selecciona:
+El Experimento 3 esta organizado en tres bloques:
 
 ```text
-Objetivo: Left vs Right
-Protocolo: Action Words
-Genero: Hombre
-Sujeto: 01
+Bloque 1 - Sin tSCS
+Bloque 2 - Con tSCS
+Bloque 3 - Medicion de MEP
 ```
 
-El sistema revisa:
+Al seleccionar Experimento 3 se debe escoger uno de estos bloques. El archivo se
+guarda dentro del bloque seleccionado.
+
+La numeracion de sesiones del Experimento 3 se calcula revisando los tres
+bloques del mismo sujeto. Ejemplo:
 
 ```text
-dataset/left_vs_right/aw/hombre/1/
+dataset/experimento_3/hombre/1/Bloque 1 - Sin tSCS/LM-AL-H-SUJETO01-SESION01-40-060526.xdf
 ```
 
-Si ya existen dos archivos XDF en esa carpeta, la nueva sesion sera:
+Si luego se guarda una nueva sesion del mismo sujeto en:
 
 ```text
-SESION03
+dataset/experimento_3/hombre/1/Bloque 3 - Medicion de MEP/
 ```
 
-La pantalla muestra una vista previa con:
-
-- Sesion automatica.
-- Numero total de trials.
-- Nombre final del archivo.
-
-**Figura sugerida 5.** Pantalla de configuracion de sesion.
-
-## 10. Pantalla de confirmacion
-
-Antes de iniciar la adquisicion, el sistema muestra un resumen:
-
-- Protocolo.
-- Objetivo.
-- Genero de videos.
-- Sujeto.
-- Sesion automatica.
-- Trials totales.
-- Nombre del archivo XDF.
-
-Para iniciar:
+el software detecta la sesion previa y guarda la nueva como:
 
 ```text
-Presionar ESPACIO
+SESION02
 ```
 
-Para volver:
+## 10. Estructura temporal de un trial
+
+Todos los experimentos usan la misma secuencia temporal:
 
 ```text
-Presionar ESC
+BASELINE  3.0 s   fondo negro
+CUE       4.5 s   cue del paradigma + beep desde el segundo 3.0
+CROSS     5.0 s   cruz o video MO, segun modalidad
+ITI       5.0 s   fondo negro entre trials
 ```
 
-**Figura sugerida 6.** Pantalla de confirmacion antes de iniciar.
-
-## 11. Grabacion con LabRecorder
-
-Al iniciar la sesion, el software realiza automaticamente estos pasos:
-
-1. Crea el stream LSL de marcadores `NeuroEsferaMarkers`.
-2. Abre LabRecorder en segundo plano.
-3. Espera el puerto de control remoto de LabRecorder.
-4. Actualiza la lista de streams visibles.
-5. Selecciona los streams LSL disponibles.
-6. Define la carpeta y el nombre del archivo XDF.
-7. Inicia la grabacion.
-
-El usuario no debe abrir LabRecorder manualmente para cada sesion, siempre que
-la ruta `LABRECORDER_PATH` este bien configurada.
-
-En consola se vera un mensaje similar:
-
-```text
-Marker stream listo
-Grabando dataset en: C:\Proyects\BCI_workspace\BCI\dataset\left_vs_right\aw\hombre\1\AW-LR-H-SUJETO01-SESION03-10-030526.xdf
-```
-
-## 12. Estructura temporal de un trial
-
-Todos los protocolos usan la misma estructura de trial:
-
-```text
-BASELINE  3.0 s   pantalla negra
-CUE       1.5 s   estimulo de clase + beep
-CROSS     5.0 s   cruz central
-ITI       1.5 s   pantalla negra entre trials
-```
-
-La duracion total por trial es aproximadamente:
-
-```text
-11.0 s
-```
-
-Al finalizar todos los trials, aparece el texto:
+Al finalizar, aparece:
 
 ```text
 Fin del experimento
@@ -372,151 +208,152 @@ Fin del experimento
 
 durante aproximadamente 3 segundos.
 
-## 13. Marcadores LSL
+## 11. Fondo y estimulos visuales
 
-Durante la sesion, el software envia markers por LSL. Estos markers quedan
-guardados dentro del XDF junto con el EEG.
+Durante la ejecucion de los experimentos el fondo es negro.
 
-Al inicio de la sesion:
+Estimulos por modalidad:
+
+- `MI`: texto o flecha de imaginacion motora.
+- `AW`: palabra de accion.
+- `MO`: en la fase `CUE` se muestra `stimuli/Estimulo_MO.png`; en la fase
+  `CROSS` se muestra el video MO correspondiente.
+- `ME`: por ahora muestra `BRAZOS` o `PIERNAS`.
+
+Los videos MO se escalan para ocupar el maximo espacio posible sin deformar su
+relacion de aspecto.
+
+## 12. Distribucion de trials por experimento
+
+### Experimento 1
 
 ```text
-TARGET_LEFT_VS_RIGHT
-GENDER_HOMBRE
+Modalidad: MI
+Clases: LEFT, RIGHT
+Trials totales: 40
 ```
 
-En cada trial:
+Con `20` trials por clase:
 
 ```text
-TRIAL_1
-CLASS_RIGHT
-BASELINE
-CUE
-AW_RIGHT
-CROSS
-ITI
+20 MI_LEFT
+20 MI_RIGHT
 ```
 
-Al final:
+### Experimento 2
 
 ```text
-END
+Modalidades: MI, MO, AW
+Clases: ARM, LEG
+Trials totales: 120
 ```
 
-Dependiendo del protocolo, el marker de tarea puede ser:
+Con `20` trials por clase y modalidad:
 
 ```text
-MI_LEFT
-MI_RIGHT
-AW_LEFT
-AW_RIGHT
-MO_LEFT
-MO_RIGHT
-MI_ARM
-MI_LEG
-AW_ARM_<PALABRA>
-AW_LEG_<PALABRA>
-MO_ARM
-MO_LEG
+20 MI_ARM
+20 MI_LEG
+20 MO_ARM
+20 MO_LEG
+20 AW_ARM_<PALABRA>
+20 AW_LEG_<PALABRA>
 ```
 
-## 14. Protocolos disponibles
-
-### 14.1 Motor Imagery
-
-El participante debe imaginar el movimiento indicado por la cue.
-
-Para `Left vs Right`, se muestran cues como:
+### Experimento 3
 
 ```text
-IZQUIERDA
-DERECHA
+Modalidades: MI, MO, AW, ME
+Clases: ARM, LEG
+Trials totales: 40
 ```
 
-Para `Arm vs Leg`, se muestran:
+La combinacion de paradigmas cambia aleatoriamente al momento de la cue. La
+distribucion por sesion es:
 
 ```text
-BRAZOS
-PIERNAS
+10 MI
+10 MO
+10 AW
+10 ME
 ```
 
-### 14.2 Action Words
-
-El participante observa palabras de accion.
-
-Para `Left vs Right`, se muestran:
+Dentro de cada paradigma se balancean brazos y piernas:
 
 ```text
-IZQUIERDA
-DERECHA
+5 ARM
+5 LEG
 ```
 
-Para `Arm vs Leg`, se muestran palabras asociadas a brazos o piernas, por
-ejemplo:
+El orden se mezcla de forma aleatoria y se evita repetir la misma clase mas de
+3 veces consecutivas cuando es posible.
+
+## 13. Grabacion con LabRecorder
+
+Al iniciar una sesion, el software:
+
+1. Crea el stream LSL de markers `NeuroEsferaMarkers`.
+2. Abre LabRecorder en segundo plano.
+3. Actualiza la lista de streams.
+4. Selecciona los streams disponibles.
+5. Define carpeta y nombre del XDF.
+6. Inicia la grabacion.
+
+En consola se muestra una linea como:
 
 ```text
-APLAUDIR
-CONECTAR
-CAMINAR
-SALTAR
+Grabando dataset en: C:\Proyects\BCI_workspace\BCI\dataset\experimento_3\hombre\1\Bloque 1 - Sin tSCS\LM-AL-H-SUJETO01-SESION01-40-060526.xdf
 ```
 
-### 14.3 Motor Observation
+## 14. Organizacion del dataset
 
-El participante observa videos relacionados con la clase.
-
-Para `Left vs Right`, se usan videos de brazo izquierdo y brazo derecho:
+El dataset se guarda en tres carpetas principales, una por experimento:
 
 ```text
-stimuli/motor_observation/left_vs_right/
+dataset/
+  experimento_1/
+  experimento_2/
+  experimento_3/
 ```
 
-Para `Arm vs Leg`, se usan videos separados por genero:
+### Experimento 1
 
 ```text
-stimuli/motor_observation/arm_vs_leg/hombre/
-stimuli/motor_observation/arm_vs_leg/mujer/
-```
-
-Los videos se muestran en pantalla completa, sin audio.
-
-### 14.4 MI + AW + MO
-
-Este protocolo combina Motor Imagery, Action Words y Motor Observation en una
-misma sesion.
-
-El numero total de trials es mayor porque se balancean las clases para las tres
-modalidades.
-
-## 15. Aleatorizacion de trials
-
-El sistema genera un plan de trials balanceado segun:
-
-- Objetivo seleccionado.
-- Protocolo seleccionado.
-- 10 trials por clase configurados por defecto.
-- Modalidades incluidas.
-
-Ademas, evita que aparezca la misma clase mas de 3 veces consecutivas.
-
-Ejemplo de secuencia que el sistema intenta evitar:
-
-```text
-RIGHT, RIGHT, RIGHT, RIGHT
-```
-
-## 16. Archivos generados
-
-Los archivos XDF se guardan en:
-
-```text
-dataset/<objetivo>/<protocolo>/<genero>/<sujeto>/
+dataset/experimento_1/<genero>/<sujeto>/
 ```
 
 Ejemplo:
 
 ```text
-dataset/left_vs_right/aw/hombre/1/
+dataset/experimento_1/hombre/1/
 ```
+
+### Experimento 2
+
+```text
+dataset/experimento_2/<genero>/<sujeto>/
+```
+
+Ejemplo:
+
+```text
+dataset/experimento_2/mujer/2/
+```
+
+### Experimento 3
+
+```text
+dataset/experimento_3/<genero>/<sujeto>/<bloque>/
+```
+
+Ejemplo:
+
+```text
+dataset/experimento_3/hombre/1/Bloque 1 - Sin tSCS/
+dataset/experimento_3/hombre/1/Bloque 2 - Con tSCS/
+dataset/experimento_3/hombre/1/Bloque 3 - Medicion de MEP/
+```
+
+## 15. Nombre de los archivos XDF
 
 El nombre del archivo usa el formato:
 
@@ -524,236 +361,311 @@ El nombre del archivo usa el formato:
 <PROTOCOLO>-<OBJETIVO>-<GENERO>-SUJETO<NN>-SESION<NN>-<TRIALS>-<FECHA>.xdf
 ```
 
-Ejemplo:
+Ejemplos:
 
 ```text
-AW-LR-H-SUJETO01-SESION03-10-030526.xdf
+MI-LR-H-SUJETO01-SESION01-40-060526.xdf
+AW-AL-M-SUJETO02-SESION03-120-060526.xdf
+LM-AL-H-SUJETO01-SESION02-40-060526.xdf
 ```
 
-Significado:
-
-```text
-AW        Protocolo Action Words
-LR        Objetivo Left vs Right
-H         Genero Hombre
-SUJETO01  Sujeto 1
-SESION03  Tercera sesion detectada automaticamente
-10        Trials totales
-030526    Fecha en formato ddmmaa
-```
-
-Codigos usados:
+Codigos:
 
 ```text
 MI  Motor Imagery
-AW  Action Words
-MO  Motor Observation
-MX  MI + AW + MO
-AL  Arm vs Leg
+AW  Action Words / Experimento 2
+LM  Experimento 3
 LR  Left vs Right
+AL  Arm vs Leg
 H   Hombre
 M   Mujer
 ```
 
-## 17. Finalizacion de la sesion
+## 16. Markers generales
+
+Al inicio de cada sesion:
+
+```text
+TARGET_LEFT_VS_RIGHT
+GENDER_HOMBRE
+```
+
+o:
+
+```text
+TARGET_ARM_VS_LEG
+GENDER_MUJER
+```
+
+En cada trial:
+
+```text
+TRIAL_<N>
+CLASS_<CLASE>
+BASELINE
+CUE
+<MARKER_DE_ESTIMULO>
+CROSS
+ITI
+```
+
+Al finalizar:
+
+```text
+END
+```
+
+Si la sesion se finaliza desde el boton `Finalizar` o con `ESC`, tambien puede
+aparecer:
+
+```text
+END_EARLY
+```
+
+## 17. Markers por experimento
+
+### Experimento 1
+
+Objetivo fijo:
+
+```text
+TARGET_LEFT_VS_RIGHT
+```
+
+Clases:
+
+```text
+CLASS_LEFT
+CLASS_RIGHT
+```
+
+Markers de estimulo:
+
+```text
+MI_LEFT
+MI_RIGHT
+```
+
+Ejemplo de trial:
+
+```text
+TRIAL_1
+CLASS_LEFT
+BASELINE
+CUE
+MI_LEFT
+CROSS
+ITI
+```
+
+### Experimento 2
+
+Objetivo fijo:
+
+```text
+TARGET_ARM_VS_LEG
+```
+
+Clases:
+
+```text
+CLASS_ARM
+CLASS_LEG
+```
+
+Markers de estimulo:
+
+```text
+MI_ARM
+MI_LEG
+MO_ARM
+MO_LEG
+AW_ARM_<PALABRA>
+AW_LEG_<PALABRA>
+```
+
+Ejemplos:
+
+```text
+AW_ARM_APLAUDIR
+AW_LEG_CAMINAR
+MO_ARM
+MI_LEG
+```
+
+### Experimento 3
+
+Objetivo fijo:
+
+```text
+TARGET_ARM_VS_LEG
+```
+
+Clases:
+
+```text
+CLASS_ARM
+CLASS_LEG
+```
+
+Markers de estimulo:
+
+```text
+MI_ARM
+MI_LEG
+MO_ARM
+MO_LEG
+AW_ARM_<PALABRA>
+AW_LEG_<PALABRA>
+ME_ARM
+ME_LEG
+```
+
+Ejemplo de orden de estimulos dentro de una sesion:
+
+```text
+1. AW_ARM_APLAUDIR
+2. MO_LEG
+3. MI_ARM
+4. ME_LEG
+```
+
+El notebook muestra este orden en formato simplificado, por ejemplo:
+
+```text
+AW_ARMS
+MO_LEGS
+MI_ARMS
+ME_LEGS
+```
+
+## 18. Finalizacion de la sesion
 
 Al finalizar, el software:
 
-1. Envia el marker `END`.
-2. Detiene la grabacion de LabRecorder.
-3. Cierra el proceso de LabRecorder.
-4. Muestra una pantalla de resumen.
+1. Envia `END`.
+2. Detiene LabRecorder.
+3. Cierra LabRecorder.
+4. Muestra pantalla de resumen.
 
 La pantalla final muestra:
 
-- Formato de grabacion.
-- Nombre del archivo.
+- Formato.
+- Archivo.
 - Objetivo.
+- Bloque, si aplica.
 - Sujeto.
 - Sesion.
-- Stream EEG detectado.
+- Stream EEG.
 - Canales.
 
-**Figura sugerida 7.** Pantalla de sesion guardada.
+## 19. Verificacion de tiempos
 
-## 18. Verificacion de tiempos
-
-Para demostrar que los tiempos fueron capturados correctamente, usar:
+Para verificar duraciones desde markers:
 
 ```powershell
 .\.venv\Scripts\python.exe tests\verify_xdf_timing.py ruta\al\archivo.xdf
 ```
 
-Si no se entrega una ruta, el script toma el XDF mas reciente:
+Si no se indica ruta, usa el XDF mas reciente en `dataset/`:
 
 ```powershell
 .\.venv\Scripts\python.exe tests\verify_xdf_timing.py
 ```
 
-El script compara los timestamps reales de los markers con los tiempos esperados:
+Intervalos esperados:
 
 ```text
-BASELINE_TO_CUE    esperado: 3.0 s
-CUE_TO_CROSS       esperado: 1.5 s
-CROSS_TO_ITI       esperado: 5.0 s
-ITI_TO_NEXT_TRIAL  esperado: 1.5 s
+BASELINE_TO_CUE            3.0 s
+CUE_TO_CROSS               4.5 s
+CROSS_TO_ITI               5.0 s
+ITI_TO_NEXT_TRIAL_OR_END   5.0 s
 ```
 
-Esta verificacion sirve como evidencia de sincronizacion temporal.
+## 20. Exploracion del dataset
 
-## 19. Exploracion del dataset
-
-Para revisar los archivos guardados se puede usar el notebook:
+Abrir el notebook:
 
 ```powershell
 .\.venv\Scripts\jupyter.exe notebook notebooks\dataset_explorer.ipynb
 ```
 
-Desde el notebook se puede:
+El notebook permite:
 
-- Seleccionar un archivo XDF.
-- Revisar streams dentro del XDF.
-- Revisar markers.
-- Revisar canales EEG.
-- Visualizar senales basicas.
-
-## 20. Cierre correcto del sistema
-
-Al terminar la adquisicion:
-
-1. Cerrar NeuroEsfera BCI.
-2. Confirmar que LabRecorder se cerro automaticamente.
-3. Detener Unicorn LSL con `Stop`.
-4. Cerrar Unicorn LSL.
-5. Apagar el casco.
-6. Guardar o respaldar los XDF si es necesario.
+- Seleccionar uno o varios archivos XDF.
+- Ver canales etiquetados en metadata.
+- Ver canales mostrados cuando el XDF no trae etiquetas.
+- Ver la secuencia completa de markers.
+- Ver el orden de estimulos por trial.
+- Ver conteos por modalidad `MI`, `MO`, `AW`, `ME`.
 
 ## 21. Solucion de problemas
 
 ### No aparecen streams LSL
 
-Posibles causas:
+Revisar:
 
-- El casco esta apagado.
-- Unicorn LSL no esta abierto.
-- No se presiono `Start` en Unicorn LSL.
-- El dongle Bluetooth no esta conectado correctamente.
+- Casco encendido.
+- Unicorn LSL abierto.
+- Boton `Start` presionado en Unicorn LSL.
+- Dongle Bluetooth conectado.
 
-Solucion:
+Verificar con:
 
 ```powershell
 .\.venv\Scripts\python.exe tests\inspect_lsl_stream.py
 ```
 
-Verificar que aparezca un stream `EEG` o `Data`.
-
 ### LabRecorder no inicia
 
-Posibles causas:
-
-- LabRecorder no esta instalado.
-- `LABRECORDER_PATH` apunta a una ruta incorrecta.
-- Se configuro por error la ruta de UnicornLSL en vez de LabRecorder.
-
-Solucion:
-
-Revisar en:
-
-```text
-core/config.py
-```
-
-La variable:
-
-```text
-LABRECORDER_PATH
-```
+Revisar que `LABRECORDER_PATH` en `core/config.py` apunte a
+`LabRecorder.exe`, no a `UnicornLSL.exe`.
 
 ### El XDF pesa muy poco
 
-Un XDF muy pequeno puede indicar que:
+Puede indicar que:
 
 - No habia stream EEG activo.
-- LabRecorder grabo solo markers.
-- La sesion fue muy corta.
+- Solo se grabaron markers.
+- La sesion fue interrumpida.
 - Unicorn LSL no estaba en `Start`.
 
-Antes de repetir la sesion, inspeccionar streams LSL.
+### El XDF no trae labels reales de electrodos
 
-### PsychoPy muestra advertencias de audio
-
-PsychoPy puede mostrar advertencias sobre audio o backend `sdl2`. Si el
-experimento corre y el beep se escucha, no necesariamente es un error critico.
-
-Para analisis de tiempos, se recomienda usar los markers del XDF y el script de
-verificacion.
-
-### El stream no trae labels reales de electrodos
-
-Algunas versiones de Unicorn LSL no publican metadata con labels de canales. En
-ese caso, el proyecto usa el mapeo configurado:
+Algunas versiones de Unicorn LSL no publican labels en metadata. En ese caso se
+usa el mapeo esperado del proyecto:
 
 ```text
 Fz, C3, Cz, C4, Pz, PO7, Oz, PO8
 ```
 
-Este mapeo debe ser consistente con el montaje fisico del casco.
-
-## 22. Flujo resumido de trabajo
+## 22. Flujo resumido
 
 ```text
-1. Encender casco Unicorn Hybrid Black
-2. Verificar senales en Unicorn Suite
+1. Encender casco
+2. Verificar senal en Unicorn Suite
 3. Abrir Unicorn LSL
-4. Seleccionar dispositivo
-5. Presionar Open
-6. Presionar Start
-7. Ejecutar NeuroEsfera BCI
-8. Seleccionar objetivo
-9. Seleccionar protocolo
-10. Configurar trials, sujeto y genero
-11. Confirmar sesion automatica
-12. Presionar espacio para iniciar
-13. Esperar fin del experimento
-14. Revisar archivo XDF generado
-15. Verificar tiempos si es necesario
-16. Explorar dataset en notebook
+4. Presionar Open y Start
+5. Ejecutar main.py
+6. Seleccionar experimento
+7. Configurar sujeto, genero de videos y bloque si aplica
+8. Verificar sesion automatica
+9. Presionar espacio para iniciar
+10. Esperar fin del experimento
+11. Revisar XDF en dataset/
+12. Explorar XDF en notebook
+13. Verificar tiempos si es necesario
 ```
 
-## 23. Diagrama de flujo
-
-```mermaid
-flowchart TD
-    A[Encender casco] --> B[Verificar en Unicorn Suite]
-    B --> C[Abrir Unicorn LSL]
-    C --> D[Publicar stream EEG por LSL]
-    D --> E[Ejecutar main.py]
-    E --> F[Menu NeuroEsfera BCI]
-    F --> G[Seleccionar objetivo]
-    G --> H[Seleccionar protocolo]
-    H --> I[Configurar sujeto, trials y genero]
-    I --> J[Calcular sesion automatica]
-    J --> K[Pantalla de confirmacion]
-    K --> L[Crear marker stream]
-    L --> M[Abrir LabRecorder en segundo plano]
-    M --> N[Ejecutar trials PsychoPy]
-    N --> O[Enviar markers LSL]
-    D --> P[LabRecorder]
-    O --> P
-    P --> Q[Archivo XDF]
-    Q --> R[Notebook / verificador de tiempos]
-```
-
-## 24. Recomendaciones para una sesion real
+## 23. Recomendaciones para una sesion real
 
 Antes de iniciar:
 
-- Confirmar que el sujeto esta comodo.
+- Confirmar comodidad del sujeto.
 - Confirmar que el casco no se mueve.
-- Confirmar que las senales EEG son estables.
+- Confirmar senales EEG estables.
 - Confirmar que Unicorn LSL publica el stream.
-- Confirmar que no hay otros procesos pesados abiertos.
-- Confirmar que la carpeta `dataset/` tiene espacio suficiente.
+- Confirmar espacio suficiente en `dataset/`.
 
 Durante la sesion:
 
@@ -764,7 +676,7 @@ Durante la sesion:
 
 Despues de la sesion:
 
-- Revisar que el XDF se genero.
-- Revisar que el peso del archivo sea coherente con la duracion.
-- Verificar tiempos con `tests/verify_xdf_timing.py`.
-- Registrar cualquier incidente experimental.
+- Confirmar que se genero el XDF.
+- Revisar peso del archivo.
+- Verificar markers o tiempos si es necesario.
+- Registrar incidentes experimentales.

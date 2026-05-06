@@ -1,1 +1,1 @@
-from experiments.movement_protocols import run_mixed_protocol
+from experiments.movement_protocols import run_lm_protocol

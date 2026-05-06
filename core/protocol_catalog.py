@@ -11,7 +11,23 @@ TARGETS = {
     },
 }
 
-TARGET_KEYS = ["arm_vs_leg", "left_vs_right"]
+
+LM_BLOCKS = {
+    "block_1": {
+        "label": "Bloque 1 - Sin tSCS",
+        "folder": "Bloque 1 - Sin tSCS",
+    },
+    "block_2": {
+        "label": "Bloque 2 - Con tSCS",
+        "folder": "Bloque 2 - Con tSCS",
+    },
+    "block_3": {
+        "label": "Bloque 3 - Medicion de MEP",
+        "folder": "Bloque 3 - Medicion de MEP",
+    },
+}
+
+LM_BLOCK_KEYS = ["block_1", "block_2", "block_3"]
 
 
 STIMULUS_GENDERS = {
@@ -36,6 +52,10 @@ PROTOCOLS = {
         "menu_label": "Experimento 1",
         "setup_title": "Configuracion de Experimento 1",
         "implemented": True,
+        "dataset_slug": "experimento_1",
+        "target_key": "left_vs_right",
+        "modalities": ["MI"],
+        "class_keys": ["left", "right"],
         "total_trials_multiplier": 2,
     },
     "action_words": {
@@ -45,33 +65,34 @@ PROTOCOLS = {
         "menu_label": "Experimento 2",
         "setup_title": "Configuracion de Experimento 2",
         "implemented": True,
-        "total_trials_multiplier": 2,
+        "dataset_slug": "experimento_2",
+        "target_key": "arm_vs_leg",
+        "modalities": ["MI", "MO", "AW"],
+        "class_keys": ["arm", "leg"],
+        "total_trials_multiplier": 6,
     },
-    "motor_observation": {
-        "code": "MO",
-        "slug": "mo",
-        "label": "Motor Observation",
+    "lm": {
+        "code": "LM",
+        "slug": "lm",
+        "label": "LM",
         "menu_label": "Experimento 3",
         "setup_title": "Configuracion de Experimento 3",
         "implemented": True,
-        "total_trials_multiplier": 2,
-    },
-    "mix": {
-        "code": "MX",
-        "slug": "mix",
-        "label": "MI + AW + MO",
-        "menu_label": "Experimento 4",
-        "setup_title": "Configuracion de Experimento 4",
-        "implemented": True,
-        "total_trials_multiplier": 6,
+        "dataset_slug": "experimento_3",
+        "target_key": "arm_vs_leg",
+        "modalities": ["MI", "MO", "AW", "ME"],
+        "class_keys": ["arm", "leg"],
+        "blocks": LM_BLOCKS,
+        "default_block_key": "block_1",
+        "trials_per_modality": 10,
+        "total_trials": 40,
     },
 }
 
 MENU_PROTOCOL_KEYS = [
     "motor_imagery",
     "action_words",
-    "motor_observation",
-    "mix",
+    "lm",
 ]
 
 
@@ -94,3 +115,10 @@ def get_stimulus_gender_config(gender_key):
         raise ValueError(f"Genero de estimulos no soportado: {gender_key}")
 
     return STIMULUS_GENDERS[gender_key]
+
+
+def get_lm_block_config(block_key):
+    if block_key not in LM_BLOCKS:
+        raise ValueError(f"Bloque LM no soportado: {block_key}")
+
+    return LM_BLOCKS[block_key]

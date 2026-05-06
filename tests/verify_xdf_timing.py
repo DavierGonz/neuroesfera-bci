@@ -9,8 +9,7 @@ from experiments.trial_sequences import TRIAL_SEQUENCES
 EXPERIMENT_BY_FILE_PREFIX = {
     "MI": "motor_imagery",
     "AW": "action_words",
-    "MO": "motor_observation",
-    "MX": "mix",
+    "LM": "lm",
 }
 
 
@@ -57,7 +56,7 @@ def infer_experiment_key(xdf_path):
     if prefix not in EXPERIMENT_BY_FILE_PREFIX:
         raise ValueError(
             "No se pudo inferir el experimento desde el nombre del XDF. "
-            "Usa --experiment motor_imagery|action_words|motor_observation|mix."
+            "Usa --experiment motor_imagery|action_words|lm."
         )
 
     return EXPERIMENT_BY_FILE_PREFIX[prefix]

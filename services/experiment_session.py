@@ -20,6 +20,7 @@ class ExperimentSession:
             "backend": getattr(self.recorder, "backend_name", "unknown"),
             "recording_path": getattr(self.recorder, "filename", "unknown"),
             "target_name": self.session_config.target_name,
+            "block_label": self.session_config.block_label,
             "stimulus_gender": self.session_config.stimulus_gender,
             "subject_number": self.session_config.subject_number,
             "session_number": self.session_config.session_number,

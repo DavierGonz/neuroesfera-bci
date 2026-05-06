@@ -6,9 +6,10 @@ from psychopy import core, event, logging as psychopy_logging, monitors, visual
 
 from core.config import FULLSCREEN, WINDOW_HEIGHT, WINDOW_TITLE, WINDOW_WIDTH
 from core.protocol_catalog import (
+    LM_BLOCK_KEYS,
     MENU_PROTOCOL_KEYS,
     STIMULUS_GENDER_KEYS,
-    TARGET_KEYS,
+    get_lm_block_config,
     get_protocol_config,
     get_stimulus_gender_config,
     get_target_config,
@@ -17,9 +18,8 @@ from core.session_config import SessionConfig
 from core.state_manager import AppState
 from eeg.stream_metadata import default_channel_names
 from experiments.action_words import run_action_words
-from experiments.mixed_protocol import run_mixed_protocol
+from experiments.mixed_protocol import run_lm_protocol
 from experiments.motor_imagery import run_motor_imagery
-from experiments.motor_observation import run_motor_observation
 from gui.ui_theme import (
     BG_COLOR,
     BUTTON_ACTIVE,
@@ -35,7 +35,7 @@ from gui.ui_theme import (
 from services.experiment_session import ExperimentSession
 
 
-DEFAULT_TRIALS_PER_CLASS = 10
+DEFAULT_TRIALS_PER_CLASS = 20
 
 
 class Button:
@@ -103,8 +103,8 @@ class AppController:
         self.state = AppState.MENU
         self.recorder = None
         self.protocol_setup = {
-            "target_key": "arm_vs_leg",
             "stimulus_gender": "hombre",
+            "block_key": "block_1",
             "trials_per_class": DEFAULT_TRIALS_PER_CLASS,
             "subject_number": 1,
         }
@@ -136,8 +136,6 @@ class AppController:
 
         if "escape" in keys:
             self._shutdown()
-        elif clicked and clicked.startswith("target:"):
-            self.protocol_setup["target_key"] = clicked.split(":", 1)[1]
         elif clicked in MENU_PROTOCOL_KEYS:
             self.selected_protocol_key = clicked
             self.pending_session_config = None
@@ -170,6 +168,11 @@ class AppController:
             self.protocol_setup["stimulus_gender"] = clicked.split(":", 1)[1]
             return
 
+        if clicked.startswith("block:"):
+            self.protocol_setup["block_key"] = clicked.split(":", 1)[1]
+            self._setup_preview_cache = None
+            return
+
         if clicked == "subject_minus":
             self.protocol_setup["subject_number"] = max(
                 1, self.protocol_setup["subject_number"] - 1
@@ -183,10 +186,10 @@ class AppController:
         if clicked == "continue":
             self.pending_session_config = SessionConfig.for_protocol(
                 self.selected_protocol_key,
-                self.protocol_setup["target_key"],
                 self.protocol_setup["stimulus_gender"],
                 self.protocol_setup["subject_number"],
                 self.protocol_setup["trials_per_class"],
+                block_key=self._selected_block_key(),
             )
             self.pending_trials_per_class = self.protocol_setup["trials_per_class"]
             self.state = AppState.PROTOCOL_READY
@@ -223,7 +226,6 @@ class AppController:
                 self._build_experiment_runner(
                     self.selected_protocol_key,
                     trials_per_class,
-                    self.pending_session_config.target_slug,
                     self.pending_session_config.stimulus_gender,
                 ),
             )
@@ -250,7 +252,6 @@ class AppController:
         self,
         protocol_key,
         trials_per_class,
-        target_key,
         stimulus_gender,
     ):
         if protocol_key == "motor_imagery":
@@ -259,7 +260,6 @@ class AppController:
                 trials_per_class,
                 session.marker_outlet,
                 session.recorder,
-                target_key,
                 stimulus_gender,
             )
         if protocol_key == "action_words":
@@ -268,25 +268,14 @@ class AppController:
                 trials_per_class,
                 session.marker_outlet,
                 session.recorder,
-                target_key,
                 stimulus_gender,
             )
-        if protocol_key == "motor_observation":
-            return lambda session: run_motor_observation(
+        if protocol_key == "lm":
+            return lambda session: run_lm_protocol(
                 self.window,
                 trials_per_class,
                 session.marker_outlet,
                 session.recorder,
-                target_key,
-                stimulus_gender,
-            )
-        if protocol_key == "mix":
-            return lambda session: run_mixed_protocol(
-                self.window,
-                trials_per_class,
-                session.marker_outlet,
-                session.recorder,
-                target_key,
                 stimulus_gender,
             )
 
@@ -330,26 +319,18 @@ class AppController:
         return clicked
 
     def _draw_menu(self, buttons):
-        selected_target = get_target_config(self.protocol_setup["target_key"])
         self.window.color = BG_COLOR
-        self._draw_panel((0.0, 0.33), (0.78, 0.20))
+        self._draw_panel((0.0, 0.28), (0.78, 0.16))
         self._draw_text("NeuroEsfera BCI", (0.0, 0.38), 0.055, TEXT_PRIMARY, bold=True)
         self._draw_text(
-            f"Objetivo seleccionado: {selected_target['label']}",
-            (0.0, 0.30),
+            "Protocolos experimentales",
+            (0.0, 0.29),
             0.023,
             TEXT_SECONDARY,
         )
         self._draw_text(
-            "Tipo de clasificacion",
-            (0.0, 0.17),
-            0.028,
-            TEXT_PRIMARY,
-            bold=True,
-        )
-        self._draw_text(
             "Experimento",
-            (0.0, -0.01),
+            (0.0, 0.11),
             0.028,
             TEXT_PRIMARY,
             bold=True,
@@ -360,10 +341,12 @@ class AppController:
 
     def _draw_protocol_setup(self, buttons):
         protocol = get_protocol_config(self.selected_protocol_key)
-        target = get_target_config(self.protocol_setup["target_key"])
+        target = get_target_config(protocol["target_key"])
         gender = get_stimulus_gender_config(self.protocol_setup["stimulus_gender"])
         setup = self.protocol_setup
         panel = self._setup_panel_metrics()
+        uses_mo = "MO" in protocol["modalities"]
+        uses_blocks = "blocks" in protocol
         self.window.color = BG_COLOR
         self._draw_panel(panel["center"], panel["size"])
         self._draw_text(
@@ -375,14 +358,14 @@ class AppController:
             wrap_width=panel["inner_width"],
         )
         self._draw_text(
-            f"{protocol['label']} | {target['label']} | Videos MO: {gender['label']}",
+            f"{protocol['label']} | {target['label']}",
             self._setup_panel_point(0.5, 0.16),
             0.018,
             TEXT_SECONDARY,
             wrap_width=panel["inner_width"],
         )
         self._draw_text(
-            f"Trials por clase fijos: {DEFAULT_TRIALS_PER_CLASS}",
+            self._trial_count_label(protocol),
             self._setup_panel_point(0.5, 0.27),
             0.022,
             TEXT_SECONDARY,
@@ -398,21 +381,35 @@ class AppController:
             label_pos=self._setup_panel_point(0.5, 0.40),
             value_pos=self._setup_panel_point(0.5, 0.51),
         )
-        self._draw_text(
-            "Genero de videos",
-            self._setup_panel_point(0.5, 0.62),
-            0.026,
-            TEXT_PRIMARY,
-            bold=True,
-        )
+        if uses_mo:
+            self._draw_text(
+                f"Genero de videos MO: {gender['label']}",
+                self._setup_panel_point(0.5, 0.62),
+                0.026,
+                TEXT_PRIMARY,
+                bold=True,
+            )
+        if uses_blocks:
+            block = get_lm_block_config(setup["block_key"])
+            self._draw_text(
+                f"Bloque: {block['label']}",
+                self._setup_panel_point(0.5, 0.745),
+                0.022,
+                TEXT_PRIMARY,
+                bold=True,
+            )
 
-        total_trials = setup["trials_per_class"] * protocol["total_trials_multiplier"]
+        total_trials = self._total_trials_for_protocol(protocol, setup)
         preview_config = self._get_setup_preview_config()
         preview = preview_config.build_basename()
+        total_y = 0.855 if uses_blocks else 0.78
+        hint_y = 0.83
+        session_y = 0.90 if uses_blocks else 0.88
+        preview_y = 0.935 if uses_blocks else 0.93
 
         self._draw_text(
             f"Trials totales: {total_trials}",
-            self._setup_panel_point(0.5, 0.78),
+            self._setup_panel_point(0.5, total_y),
             0.022,
             TEXT_SECONDARY,
             bold=True,
@@ -422,22 +419,23 @@ class AppController:
             if protocol["implemented"]
             else "Protocolo en menu, ejecucion pendiente"
         )
-        self._draw_text(
-            protocol_hint,
-            self._setup_panel_point(0.5, 0.83),
-            0.017,
-            TEXT_SECONDARY,
-        )
+        if not uses_blocks:
+            self._draw_text(
+                protocol_hint,
+                self._setup_panel_point(0.5, hint_y),
+                0.017,
+                TEXT_SECONDARY,
+            )
         self._draw_text(
             f"Sesion automatica: {preview_config.session_number:02d}",
-            self._setup_panel_point(0.5, 0.88),
+            self._setup_panel_point(0.5, session_y),
             0.017,
             TEXT_SECONDARY,
             bold=True,
         )
         self._draw_text(
             preview,
-            self._setup_panel_point(0.5, 0.93),
+            self._setup_panel_point(0.5, preview_y),
             0.017,
             TEXT_ACCENT,
             wrap_width=panel["inner_width"] * 0.84,
@@ -459,12 +457,18 @@ class AppController:
         details = [
             f"Protocolo: {config.protocol_name}",
             f"Objetivo: {config.target_name}",
-            f"Videos MO: {get_stimulus_gender_config(config.stimulus_gender)['label']}",
             f"Sujeto: {config.subject_number:02d}",
             f"Sesion automatica: {config.session_number:02d}",
             f"Trials totales: {config.total_trials}",
             f"Archivo: {config.build_basename()}.xdf",
         ]
+        if "MO" in protocol["modalities"]:
+            details.insert(
+                2,
+                f"Videos MO: {get_stimulus_gender_config(config.stimulus_gender)['label']}",
+            )
+        if config.block_label:
+            details.insert(3, f"Bloque: {config.block_label}")
 
         for index, text in enumerate(details):
             self._draw_text(
@@ -518,6 +522,8 @@ class AppController:
             f"EEG stream: {result['stream_name']}",
             f"Canales: {channels_text}",
         ]
+        if result.get("block_label"):
+            details.insert(3, f"Bloque: {result['block_label']}")
 
         for index, text in enumerate(details):
             self._draw_text(
@@ -546,26 +552,8 @@ class AppController:
 
     def _menu_buttons(self):
         buttons = {}
-        target_x_positions = (-0.13, 0.13)
 
-        for index, target_key in enumerate(TARGET_KEYS):
-            target = get_target_config(target_key)
-            fill = (
-                BUTTON_ACTIVE
-                if self.protocol_setup["target_key"] == target_key
-                else BUTTON_MUTED
-            )
-            buttons[f"target:{target_key}"] = Button(
-                self.window,
-                target["label"],
-                (target_x_positions[index], 0.095),
-                (0.23, 0.06),
-                fill,
-                text_color=BG_COLOR if fill == BUTTON_ACTIVE else TEXT_PRIMARY,
-                text_height=0.028,
-            )
-
-        start_y = -0.10
+        start_y = 0.02
         gap = 0.073
 
         for index, protocol_key in enumerate(MENU_PROTOCOL_KEYS):
@@ -592,6 +580,7 @@ class AppController:
 
     def _protocol_setup_buttons(self):
         setup = self.protocol_setup
+        protocol = get_protocol_config(self.selected_protocol_key)
         buttons = {}
 
         buttons["subject_minus"] = Button(
@@ -611,18 +600,37 @@ class AppController:
             text_height=0.04,
         )
 
-        for index, gender_key in enumerate(STIMULUS_GENDER_KEYS):
-            gender = get_stimulus_gender_config(gender_key)
-            fill = BUTTON_ACTIVE if setup["stimulus_gender"] == gender_key else BUTTON_MUTED
-            buttons[f"gender:{gender_key}"] = Button(
-                self.window,
-                gender["label"],
-                self._setup_panel_point(0.38 + index * 0.24, 0.69),
-                (0.18, 0.048),
-                fill,
-                text_color=BG_COLOR if fill == BUTTON_ACTIVE else TEXT_PRIMARY,
-                text_height=0.026,
-            )
+        if "MO" in protocol["modalities"]:
+            for index, gender_key in enumerate(STIMULUS_GENDER_KEYS):
+                gender = get_stimulus_gender_config(gender_key)
+                fill = BUTTON_ACTIVE if setup["stimulus_gender"] == gender_key else BUTTON_MUTED
+                buttons[f"gender:{gender_key}"] = Button(
+                    self.window,
+                    gender["label"],
+                    self._setup_panel_point(0.38 + index * 0.24, 0.69),
+                    (0.18, 0.048),
+                    fill,
+                    text_color=BG_COLOR if fill == BUTTON_ACTIVE else TEXT_PRIMARY,
+                    text_height=0.026,
+                )
+
+        if "blocks" in protocol:
+            block_labels = {
+                "block_1": "B1 Sin tSCS",
+                "block_2": "B2 Con tSCS",
+                "block_3": "B3 MEP",
+            }
+            for index, block_key in enumerate(LM_BLOCK_KEYS):
+                fill = BUTTON_ACTIVE if setup["block_key"] == block_key else BUTTON_MUTED
+                buttons[f"block:{block_key}"] = Button(
+                    self.window,
+                    block_labels[block_key],
+                    self._setup_panel_point(0.25 + index * 0.25, 0.80),
+                    (0.19, 0.043),
+                    fill,
+                    text_color=BG_COLOR if fill == BUTTON_ACTIVE else TEXT_PRIMARY,
+                    text_height=0.019,
+                )
 
         buttons["back"] = Button(
             self.window,
@@ -647,16 +655,22 @@ class AppController:
         setup = self.protocol_setup
         cache_key = (
             self.selected_protocol_key,
-            setup["target_key"],
             setup["stimulus_gender"],
             setup["subject_number"],
             setup["trials_per_class"],
+            self._selected_block_key(),
         )
 
         if self._setup_preview_cache and self._setup_preview_cache[0] == cache_key:
             return self._setup_preview_cache[1]
 
-        preview_config = SessionConfig.for_protocol(*cache_key)
+        preview_config = SessionConfig.for_protocol(
+            cache_key[0],
+            cache_key[1],
+            cache_key[2],
+            cache_key[3],
+            block_key=cache_key[4],
+        )
         self._setup_preview_cache = (cache_key, preview_config)
 
         return preview_config
@@ -664,6 +678,25 @@ class AppController:
     def _draw_stepper(self, label, value, label_pos, value_pos):
         self._draw_text(label, label_pos, 0.025, TEXT_PRIMARY, bold=True, wrap_width=0.30)
         self._draw_text(f"{value:02d}", value_pos, 0.046, TEXT_PRIMARY, bold=True)
+
+    def _trial_count_label(self, protocol):
+        if "trials_per_modality" in protocol:
+            return f"Trials por paradigma: {protocol['trials_per_modality']}"
+
+        return f"Trials por clase fijos: {DEFAULT_TRIALS_PER_CLASS}"
+
+    def _total_trials_for_protocol(self, protocol, setup):
+        if "total_trials" in protocol:
+            return protocol["total_trials"]
+
+        return setup["trials_per_class"] * protocol["total_trials_multiplier"]
+
+    def _selected_block_key(self):
+        protocol = get_protocol_config(self.selected_protocol_key)
+        if "blocks" not in protocol:
+            return None
+
+        return self.protocol_setup["block_key"]
 
     def _draw_panel(self, center, size):
         visual.Rect(

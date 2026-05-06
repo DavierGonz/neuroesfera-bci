@@ -1,7 +1,7 @@
 BASELINE_SECONDS = 3.0
-CUE_SECONDS = 1.5
+CUE_SECONDS = 4.5
 CROSS_SECONDS = 5.0
-ITI_SECONDS = 1.5
+ITI_SECONDS = 5.0
 END_SECONDS = 3.0
 BEEP_FREQUENCY = 880
 
@@ -9,7 +9,7 @@ STAGE_BLANK = "blank"
 STAGE_STIMULUS = "stimulus"
 STAGE_CROSS = "cross"
 
-def beep(start=0.0, duration=CUE_SECONDS, frequency=BEEP_FREQUENCY):
+def beep(start=3.0, duration=1.5, frequency=BEEP_FREQUENCY):
     return {
         "beep": {
             "start": start,
@@ -35,13 +35,7 @@ TRIAL_SEQUENCES = {
         ("CROSS", CROSS_SECONDS, STAGE_CROSS),
         ("ITI", ITI_SECONDS, STAGE_BLANK),
     ],
-    "motor_observation": [
-        ("BASELINE", BASELINE_SECONDS, STAGE_BLANK),
-        ("CUE", CUE_SECONDS, STAGE_STIMULUS, beep()),
-        ("CROSS", CROSS_SECONDS, STAGE_CROSS),
-        ("ITI", ITI_SECONDS, STAGE_BLANK),
-    ],
-    "mix": [
+    "lm": [
         ("BASELINE", BASELINE_SECONDS, STAGE_BLANK),
         ("CUE", CUE_SECONDS, STAGE_STIMULUS, beep()),
         ("CROSS", CROSS_SECONDS, STAGE_CROSS),

@@ -6,7 +6,6 @@ import tempfile
 import time
 
 from core.config import (
-    DATA_DIR,
     LABRECORDER_PATH,
     LABRECORDER_RCS_HOST,
     LABRECORDER_RCS_PORT,
@@ -14,6 +13,7 @@ from core.config import (
     LABRECORDER_STARTUP_TIMEOUT,
     UNICORN_LSL_PATH,
 )
+from core.session_config import build_session_folder
 from eeg.stream_metadata import build_stream_summary, resolve_eeg_stream_info
 
 
@@ -163,10 +163,4 @@ def _build_output_path(session_config, extension):
 
 
 def _build_session_folder(session_config):
-    return os.path.join(
-        DATA_DIR,
-        session_config.target_slug,
-        session_config.protocol_slug,
-        session_config.stimulus_gender,
-        str(session_config.subject_number),
-    )
+    return str(build_session_folder(session_config))
