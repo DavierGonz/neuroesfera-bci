@@ -11,8 +11,9 @@ from core.protocol_catalog import get_protocol_config
 from eeg.lsl_markers import send_marker
 from experiments.trial_sequences import (
     END_SECONDS,
+    STAGE_ACTIVE,
     STAGE_BLANK,
-    STAGE_CROSS,
+    STAGE_REST,
     STAGE_STIMULUS,
     TRIAL_SEQUENCES,
 )
@@ -21,6 +22,11 @@ from gui.ui_theme import BG_COLOR, BUTTON_MUTED, PANEL_BORDER, TEXT_PRIMARY
 
 MAX_CONSECUTIVE_CLASS_REPEATS = 3
 EXPERIMENT_BG_COLOR = (0, 0, 0)
+REST_BG_COLOR = (128, 128, 128)
+WHITE = (255, 255, 255)
+MI_BLUE = (30, 110, 255)
+ME_GREEN = (70, 170, 80)
+AW_ORANGE = (255, 150, 45)
 
 ARM_WORDS = ["APLAUDIR", "CONECTAR", "CORTAR", "ESCRIBIR", "LANZAR"]
 LEG_WORDS = ["CAMINAR", "MARCHAR", "PATEAR", "SALTAR", "SENTAR"]
@@ -87,7 +93,7 @@ def run_motor_imagery(window, trials, marker_outlet, recorder, stimulus_gender):
         marker_outlet,
         recorder,
         stimulus_gender,
-        "motor_imagery",
+        "paradigm_mi",
     )
 
 
@@ -98,44 +104,47 @@ def run_action_words(window, trials, marker_outlet, recorder, stimulus_gender):
         marker_outlet,
         recorder,
         stimulus_gender,
-        "action_words",
+        "paradigm_aw",
     )
 
 
-def run_lm_protocol(window, trials, marker_outlet, recorder, stimulus_gender):
+def run_motor_execution(window, trials, marker_outlet, recorder, stimulus_gender):
     _run_catalog_protocol(
         window,
         trials,
         marker_outlet,
         recorder,
         stimulus_gender,
-        "lm",
+        "paradigm_me",
     )
 
 
-def run_motor_observation(window, trials, marker_outlet, recorder, target_key, stimulus_gender):
-    _run_protocol(
+def run_motor_observation(window, trials, marker_outlet, recorder, stimulus_gender):
+    _run_catalog_protocol(
         window,
         trials,
         marker_outlet,
         recorder,
-        target_key,
         stimulus_gender,
-        ["MO"],
-        "lm",
+        "paradigm_mo",
     )
 
 
-def run_mixed_protocol(window, trials, marker_outlet, recorder, target_key, stimulus_gender):
-    _run_protocol(
+def run_protocol_by_key(
+    window,
+    trials,
+    marker_outlet,
+    recorder,
+    stimulus_gender,
+    experiment_key,
+):
+    _run_catalog_protocol(
         window,
         trials,
         marker_outlet,
         recorder,
-        target_key,
         stimulus_gender,
-        ["MI", "AW", "MO"],
-        "lm",
+        experiment_key,
     )
 
 
@@ -183,81 +192,74 @@ def _run_protocol(
     )
     trial_sequence = _trial_sequence(experiment_key)
 
-    cross = _text_stim(window, "+", height=0.16, font="Arial")
+    cross = _text_stim(window, "+", height=0.16, font="Arial", color=WHITE)
     end_text = _text_stim(window, "Fin del experimento", height=0.08)
     abort_text = _text_stim(window, "Sesion finalizada", height=0.08)
     abort_control = AbortControl(window)
-    mo_movie_paths = _prepare_mo_movie_paths(trial_plan, target_key, stimulus_gender)
-    movie_cache = _build_movie_cache(window, mo_movie_paths.values())
     mo_cue_image = _build_mo_cue_image(window) if "MO" in modalities else None
 
     send_marker(marker_outlet, f"TARGET_{target_key.upper()}")
     send_marker(marker_outlet, f"GENDER_{stimulus_gender.upper()}")
     _draw_stage(window, abort_control=abort_control)
 
+    ended_early = False
+
     try:
-        ended_early = False
+        for trial_id, (modality, class_key) in enumerate(trial_plan, start=1):
+            task_stimulus = _build_task_stimulus(
+                window,
+                modality,
+                class_key,
+                target_key,
+                stimulus_gender,
+                mo_cue_image=mo_cue_image,
+            )
+            stimulus_cleaned = False
 
-        try:
-            for trial_id, (modality, class_key) in enumerate(trial_plan, start=1):
-                task_stimulus = _build_task_stimulus(
-                    window,
-                    modality,
-                    class_key,
-                    target_key,
-                    stimulus_gender,
-                    movie_cache,
-                    mo_movie_paths.get(trial_id - 1),
-                    mo_cue_image,
-                )
-                stimulus_cleaned = False
+            def cleanup_stimulus():
+                nonlocal stimulus_cleaned
 
-                def cleanup_stimulus():
-                    nonlocal stimulus_cleaned
+                if stimulus_cleaned:
+                    return
 
-                    if stimulus_cleaned:
-                        return
+                _stop_task_stimulus(task_stimulus)
+                task_stimulus["cleanup"]()
+                stimulus_cleaned = True
 
-                    _stop_task_stimulus(task_stimulus)
-                    task_stimulus["cleanup"]()
-                    stimulus_cleaned = True
+            send_marker(marker_outlet, f"TRIAL_{trial_id}")
+            send_marker(marker_outlet, f"CLASS_{class_key.upper()}")
 
-                send_marker(marker_outlet, f"TRIAL_{trial_id}")
-                send_marker(marker_outlet, f"CLASS_{class_key.upper()}")
+            try:
+                for stage_config in trial_sequence:
+                    stage_marker, duration, stage_type, stage_options = (
+                        _parse_stage_config(stage_config)
+                    )
+                    _run_trial_stage(
+                        window,
+                        recorder,
+                        marker_outlet,
+                        stage_marker,
+                        duration,
+                        stage_type,
+                        task_stimulus=task_stimulus,
+                        cross=cross,
+                        stage_options=stage_options,
+                        cleanup_stimulus=cleanup_stimulus,
+                        abort_control=abort_control,
+                    )
+            finally:
+                cleanup_stimulus()
+    except TrialSessionAbort:
+        ended_early = True
+        send_marker(marker_outlet, "END_EARLY")
 
-                try:
-                    for stage_config in trial_sequence:
-                        stage_marker, duration, stage_type, stage_options = (
-                            _parse_stage_config(stage_config)
-                        )
-                        _run_trial_stage(
-                            window,
-                            recorder,
-                            marker_outlet,
-                            stage_marker,
-                            duration,
-                            stage_type,
-                            task_stimulus=task_stimulus,
-                            cross=cross,
-                            stage_options=stage_options,
-                            cleanup_stimulus=cleanup_stimulus,
-                            abort_control=abort_control,
-                        )
-                finally:
-                    cleanup_stimulus()
-        except TrialSessionAbort:
-            ended_early = True
-            send_marker(marker_outlet, "END_EARLY")
-
-        final_text = abort_text if ended_early else end_text
-        _draw_stage(window, [final_text])
-        send_marker(marker_outlet, "END")
-        recorder.record_for_duration(
-            END_SECONDS,
-            on_tick=lambda: _draw_stage(window, [final_text]),
-        )
-    finally:
-        _unload_movie_cache(movie_cache)
+    final_text = abort_text if ended_early else end_text
+    _draw_stage(window, [final_text])
+    send_marker(marker_outlet, "END")
+    recorder.record_for_duration(
+        END_SECONDS,
+        on_tick=lambda: _draw_stage(window, [final_text]),
+    )
 
 
 def _trial_sequence(experiment_key):
@@ -293,18 +295,34 @@ def _run_trial_stage(
     abort_control,
 ):
     if stage_type == STAGE_BLANK:
-        _draw_stage(window, abort_control=abort_control)
+        _draw_stage(window, [cross], abort_control=abort_control)
         send_marker(marker_outlet, stage_marker)
         _record_stage(
             recorder,
             duration,
-            on_tick=lambda: _draw_stage(window, abort_control=abort_control),
+            on_tick=lambda: _draw_stage(window, [cross], abort_control=abort_control),
             beep_config=stage_options.get("beep"),
             abort_control=abort_control,
         )
         return
 
-    if stage_type in (STAGE_STIMULUS, STAGE_CROSS):
+    if stage_type == STAGE_REST:
+        _draw_stage(window, abort_control=abort_control, bg_color=REST_BG_COLOR)
+        send_marker(marker_outlet, stage_marker)
+        _record_stage(
+            recorder,
+            duration,
+            on_tick=lambda: _draw_stage(
+                window,
+                abort_control=abort_control,
+                bg_color=REST_BG_COLOR,
+            ),
+            beep_config=stage_options.get("beep"),
+            abort_control=abort_control,
+        )
+        return
+
+    if stage_type in (STAGE_STIMULUS, STAGE_ACTIVE):
         stage_stimulus = _stage_stimulus(task_stimulus, stage_type, cross)
         _start_stimulus(stage_stimulus)
         _draw_stage(window, [stage_stimulus], abort_control=abort_control)
@@ -377,12 +395,13 @@ def _build_task_stimulus(
             cleanup_stage=STAGE_STIMULUS,
         )
     if modality == "AW":
-        stimulus, marker = _build_aw_stimulus(window, class_key)
+        cue, active, marker = _build_aw_stimulus(window, class_key)
         return _task_stimulus(
-            cue=stimulus,
+            cue=cue,
+            active=active,
             marker=marker,
-            marker_stage=STAGE_STIMULUS,
-            cleanup_stage=STAGE_STIMULUS,
+            marker_stage=STAGE_ACTIVE,
+            cleanup_stage=STAGE_ACTIVE,
         )
     if modality == "MO":
         movie, marker, cleanup = _build_mo_stimulus(
@@ -395,11 +414,11 @@ def _build_task_stimulus(
         )
         return _task_stimulus(
             cue=mo_cue_image or _build_mo_cue_image(window),
-            cross=movie,
+            active=movie,
             marker=marker,
-            marker_stage=STAGE_CROSS,
+            marker_stage=STAGE_ACTIVE,
             cleanup=cleanup,
-            cleanup_stage=STAGE_CROSS,
+            cleanup_stage=STAGE_ACTIVE,
         )
     if modality == "ME":
         stimulus, marker = _build_me_stimulus(window, class_key)
@@ -412,34 +431,38 @@ def _build_task_stimulus(
 
     raise ValueError(f"Modalidad no soportada: {modality}")
 
-# Cambios relacionados con la duracion de las fases, agregar ITI de 5 segundos y eliminar el END que no se usa.
 def _build_mi_stimulus(window, class_key):
-    if class_key in ("left", "right"):
-        text = "\u2190" if class_key == "left" else "\u2192"
-        stimulus = _text_stim(window, text, height=0.16, font="Segoe UI Symbol")
-    else:
-        text = "BRAZOS" if class_key == "arm" else "PIERNAS"
-        stimulus = _text_stim(window, text, height=0.075)
+    text = "\u2191" if class_key == "arm" else "\u2193"
+    stimulus = _text_stim(
+        window,
+        text,
+        height=0.18,
+        font="Segoe UI Symbol",
+        color=MI_BLUE,
+    )
 
     return stimulus, f"MI_{class_key.upper()}"
 
 
 def _build_aw_stimulus(window, class_key):
-    if class_key in ("left", "right"):
-        text = "IZQUIERDA" if class_key == "left" else "DERECHA"
-        marker = f"AW_{class_key.upper()}"
-    else:
-        words = ARM_WORDS if class_key == "arm" else LEG_WORDS
-        text = random.choice(words)
-        marker = f"AW_{class_key.upper()}_{_marker_token(text)}"
+    words = ARM_WORDS if class_key == "arm" else LEG_WORDS
+    text = random.choice(words)
+    cue = _text_stim(window, "Palabra", height=0.075, color=AW_ORANGE)
+    active = _text_stim(window, text, height=0.075, color=AW_ORANGE)
+    marker = f"AW_{class_key.upper()}_{_marker_token(text)}"
 
-    stimulus = _text_stim(window, text, height=0.065)
-    return stimulus, marker
+    return cue, active, marker
 
 
 def _build_me_stimulus(window, class_key):
-    text = "BRAZOS" if class_key == "arm" else "PIERNAS"
-    stimulus = _text_stim(window, text, height=0.075)
+    text = "\u2191" if class_key == "arm" else "\u2193"
+    stimulus = _text_stim(
+        window,
+        text,
+        height=0.18,
+        font="Segoe UI Symbol",
+        color=ME_GREEN,
+    )
     return stimulus, f"ME_{class_key.upper()}"
 
 
@@ -451,17 +474,34 @@ def _build_mo_stimulus(
     movie_cache=None,
     movie_path=None,
 ):
-    movie_path = movie_path or _select_movie_path(class_key, target_key, stimulus_gender)
-    movie = (movie_cache or {}).get(movie_path)
-
-    if movie is None:
-        movie = _build_movie_stim(window, movie_path)
-        cleanup = movie.unload
+    if movie_path is not None:
+        candidate_paths = [movie_path]
     else:
-        cleanup = _noop
+        candidate_paths = _movie_candidates(class_key, target_key, stimulus_gender)
+        random.shuffle(candidate_paths)
 
-    marker = f"MO_{class_key.upper()}"
-    return movie, marker, cleanup
+    failures = []
+    for candidate_path in candidate_paths:
+        movie = (movie_cache or {}).get(candidate_path)
+
+        if movie is not None:
+            marker = f"MO_{class_key.upper()}"
+            return movie, marker, _noop
+
+        try:
+            movie = _build_movie_stim(window, candidate_path)
+        except Exception as error:
+            failures.append(f"{candidate_path}: {error}")
+            continue
+
+        marker = f"MO_{class_key.upper()}"
+        return movie, marker, movie.unload
+
+    details = "\n".join(failures) if failures else "No hubo candidatos."
+    raise RuntimeError(
+        f"No se pudo cargar ningun video MO para {class_key} ({stimulus_gender}).\n"
+        f"Videos intentados:\n{details}"
+    )
 
 
 def _task_stimulus(
@@ -469,12 +509,12 @@ def _task_stimulus(
     marker,
     marker_stage,
     cleanup_stage,
-    cross=None,
+    active=None,
     cleanup=None,
 ):
     return {
         "cue": cue,
-        "cross": cross,
+        "active": active,
         "marker": marker,
         "marker_stage": marker_stage,
         "cleanup": cleanup or _noop,
@@ -483,16 +523,16 @@ def _task_stimulus(
 
 
 def _stage_stimulus(task_stimulus, stage_type, default_cross):
-    if stage_type == STAGE_CROSS:
-        return task_stimulus["cross"] or default_cross
+    if stage_type == STAGE_ACTIVE:
+        return task_stimulus["active"] or default_cross
 
     return task_stimulus["cue"]
 
 
 def _stop_task_stimulus(task_stimulus):
     _stop_stimulus(task_stimulus["cue"])
-    if task_stimulus["cross"] is not None:
-        _stop_stimulus(task_stimulus["cross"])
+    if task_stimulus["active"] is not None:
+        _stop_stimulus(task_stimulus["active"])
 
 
 def _build_trial_plan(trials, modalities, classes, trials_per_modality=None):
@@ -569,24 +609,8 @@ def _would_exceed_class_repeat(trial_plan, class_key, max_repeats):
     return all(recent_class == class_key for recent_class in recent_classes)
 
 
-def _prepare_mo_movie_paths(trial_plan, target_key, stimulus_gender):
-    movie_paths = {}
-
-    for index, (modality, class_key) in enumerate(trial_plan):
-        if modality == "MO":
-            movie_paths[index] = _select_movie_path(class_key, target_key, stimulus_gender)
-
-    return movie_paths
-
-
-def _build_movie_cache(window, movie_paths):
-    return {
-        movie_path: _build_movie_stim(window, movie_path)
-        for movie_path in sorted(set(movie_paths))
-    }
-
-
 def _build_movie_stim(window, movie_path):
+    movie_path = Path(movie_path).resolve()
     window_aspect = window.size[0] / window.size[1]
     max_width = window_aspect * 0.95
     max_height = 0.95
@@ -691,18 +715,17 @@ def _stimulus_dimensions(size):
     return (width, height)
 
 
-def _unload_movie_cache(movie_cache):
-    for movie in movie_cache.values():
-        movie.unload()
-
-
 def _select_movie_path(class_key, target_key, stimulus_gender):
+    return random.choice(_movie_candidates(class_key, target_key, stimulus_gender))
+
+
+def _movie_candidates(class_key, target_key, stimulus_gender):
     if target_key == "left_vs_right":
         filename = "raise_left_arm.mp4" if class_key == "left" else "raise_right_arm.mp4"
         path = Path("stimuli") / "motor_observation" / "left_vs_right" / filename
         if not path.exists():
             raise FileNotFoundError(f"No se encontro el video requerido: {path}")
-        return path
+        return [path]
 
     folder = Path("stimuli") / "motor_observation" / "arm_vs_leg" / stimulus_gender
     prefixes = ARM_VIDEO_PREFIXES if class_key == "arm" else LEG_VIDEO_PREFIXES
@@ -717,7 +740,7 @@ def _select_movie_path(class_key, target_key, stimulus_gender):
             f"No hay videos MO para clase {class_key} en la carpeta {folder}."
         )
 
-    return random.choice(candidates)
+    return candidates
 
 
 def _target_classes(target_key):
@@ -729,13 +752,13 @@ def _target_classes(target_key):
     raise ValueError(f"Objetivo no soportado: {target_key}")
 
 
-def _text_stim(window, text, height, font="Segoe UI"):
+def _text_stim(window, text, height, font="Segoe UI", color=TEXT_PRIMARY):
     return visual.TextStim(
         win=window,
         text=text,
         units="height",
         height=height,
-        color=TEXT_PRIMARY,
+        color=color,
         colorSpace="rgb255",
         bold=True,
         font=font,
@@ -743,8 +766,8 @@ def _text_stim(window, text, height, font="Segoe UI"):
     )
 
 
-def _draw_stage(window, stimuli=None, abort_control=None):
-    window.color = EXPERIMENT_BG_COLOR
+def _draw_stage(window, stimuli=None, abort_control=None, bg_color=EXPERIMENT_BG_COLOR):
+    window.color = bg_color
 
     for stimulus in stimuli or []:
         stimulus.draw()

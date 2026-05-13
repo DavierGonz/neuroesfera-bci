@@ -6,7 +6,7 @@ import re
 from core.config import DATA_DIR
 
 from core.protocol_catalog import (
-    get_lm_block_config,
+    get_block_config,
     get_protocol_config,
     get_stimulus_gender_config,
     get_target_config,
@@ -45,7 +45,7 @@ class SessionConfig:
         protocol = get_protocol_config(protocol_key)
         target = get_target_config(protocol["target_key"])
         gender = get_stimulus_gender_config(stimulus_gender)
-        resolved_block_key, block = _resolve_block(protocol, block_key)
+        block = _resolve_block(protocol, block_key)
         resolved_session_number = session_number or _next_session_number(
             protocol,
             target,
@@ -72,7 +72,7 @@ class SessionConfig:
                 trials_per_class * protocol.get("total_trials_multiplier", 0),
             ),
             session_date=datetime.now().strftime("%d%m%y"),
-            block_key=resolved_block_key,
+            block_key=block["key"] if block else None,
             block_label=block["label"] if block else None,
             block_folder=block["folder"] if block else None,
         )
@@ -80,7 +80,7 @@ class SessionConfig:
     @classmethod
     def for_motor_imagery(cls, subject_number, trials_per_class):
         return cls.for_protocol(
-            "motor_imagery",
+            "experiment_1",
             "hombre",
             subject_number,
             trials_per_class,
@@ -93,27 +93,27 @@ class SessionConfig:
             f"{self.stimulus_gender_code}-"
             f"SUJETO{self.subject_number:02d}-"
             f"SESION{self.session_number:02d}-"
-            f"{self.total_trials:02d}-"
+            f"T{self.total_trials:02d}-"
             f"{self.session_date}"
-        )
+        ).upper()
 
 
 def _resolve_block(protocol, block_key):
-    if "blocks" not in protocol:
-        return None, None
+    if not protocol.get("requires_block"):
+        return None
 
-    resolved_block_key = block_key or protocol["default_block_key"]
-    return resolved_block_key, get_lm_block_config(resolved_block_key)
+    resolved_key = block_key or protocol["block_keys"][0]
+    block = dict(get_block_config(resolved_key))
+    block["key"] = resolved_key
+    return block
 
 
 def _next_session_number(protocol, target, gender, stimulus_gender, subject_number, block):
-    folders = _session_search_folders(protocol, stimulus_gender, subject_number, block)
-    xdf_files = [
-        xdf_file
-        for folder in folders
-        if folder.exists()
-        for xdf_file in folder.glob("*.xdf")
-    ]
+    folder = _subject_folder(protocol, stimulus_gender, subject_number)
+    if block:
+        xdf_files = [xdf_file for xdf_file in folder.rglob("*.xdf") if xdf_file.is_file()]
+    else:
+        xdf_files = [xdf_file for xdf_file in folder.glob("*.xdf") if xdf_file.is_file()]
 
     if not xdf_files:
         return 1
@@ -134,18 +134,6 @@ def _next_session_number(protocol, target, gender, stimulus_gender, subject_numb
         return max(detected_sessions) + 1
 
     return len(xdf_files) + 1
-
-
-def _session_search_folders(protocol, stimulus_gender, subject_number, block):
-    subject_folder = _subject_folder(protocol, stimulus_gender, subject_number)
-
-    if "blocks" not in protocol:
-        return [subject_folder]
-
-    return [
-        subject_folder / block_config["folder"]
-        for block_config in protocol["blocks"].values()
-    ]
 
 
 def build_session_folder(session_config):

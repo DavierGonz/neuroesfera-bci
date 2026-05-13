@@ -11,25 +11,6 @@ TARGETS = {
     },
 }
 
-
-LM_BLOCKS = {
-    "block_1": {
-        "label": "Bloque 1 - Sin tSCS",
-        "folder": "Bloque 1 - Sin tSCS",
-    },
-    "block_2": {
-        "label": "Bloque 2 - Con tSCS",
-        "folder": "Bloque 2 - Con tSCS",
-    },
-    "block_3": {
-        "label": "Bloque 3 - Medicion de MEP",
-        "folder": "Bloque 3 - Medicion de MEP",
-    },
-}
-
-LM_BLOCK_KEYS = ["block_1", "block_2", "block_3"]
-
-
 STIMULUS_GENDERS = {
     "hombre": {
         "code": "H",
@@ -43,25 +24,45 @@ STIMULUS_GENDERS = {
 
 STIMULUS_GENDER_KEYS = ["hombre", "mujer"]
 
+EXPERIMENT_3_BLOCKS = {
+    "bloque1": {
+        "code": "B1",
+        "label": "Bloque 1 - Sin tSCS",
+        "folder": "bloque1",
+    },
+    "bloque2": {
+        "code": "B2",
+        "label": "Bloque 2 - Con tSCS",
+        "folder": "bloque2",
+    },
+    "bloque3": {
+        "code": "B3",
+        "label": "Bloque 3 - Medicion de MEP",
+        "folder": "bloque3",
+    },
+}
+
+EXPERIMENT_3_BLOCK_KEYS = ["bloque1", "bloque2", "bloque3"]
+
 
 PROTOCOLS = {
-    "motor_imagery": {
+    "experiment_1": {
         "code": "MI",
         "slug": "mi",
-        "label": "Motor Imagery",
+        "label": "Experimento 1 - MI",
         "menu_label": "Experimento 1",
         "setup_title": "Configuracion de Experimento 1",
         "implemented": True,
         "dataset_slug": "experimento_1",
-        "target_key": "left_vs_right",
+        "target_key": "arm_vs_leg",
         "modalities": ["MI"],
-        "class_keys": ["left", "right"],
+        "class_keys": ["arm", "leg"],
         "total_trials_multiplier": 2,
     },
-    "action_words": {
-        "code": "AW",
-        "slug": "aw",
-        "label": "Action Words",
+    "experiment_2": {
+        "code": "MI-MO-AW",
+        "slug": "mi_mo_aw",
+        "label": "Experimento 2 - MI + MO + AW",
         "menu_label": "Experimento 2",
         "setup_title": "Configuracion de Experimento 2",
         "implemented": True,
@@ -69,12 +70,13 @@ PROTOCOLS = {
         "target_key": "arm_vs_leg",
         "modalities": ["MI", "MO", "AW"],
         "class_keys": ["arm", "leg"],
-        "total_trials_multiplier": 6,
+        "trials_per_modality": 10,
+        "total_trials": 30,
     },
-    "lm": {
-        "code": "LM",
-        "slug": "lm",
-        "label": "LM",
+    "experiment_3": {
+        "code": "MI",
+        "slug": "mi_mo_aw_me",
+        "label": "Experimento 3 - MI + MO + AW + ME",
         "menu_label": "Experimento 3",
         "setup_title": "Configuracion de Experimento 3",
         "implemented": True,
@@ -82,18 +84,80 @@ PROTOCOLS = {
         "target_key": "arm_vs_leg",
         "modalities": ["MI", "MO", "AW", "ME"],
         "class_keys": ["arm", "leg"],
-        "blocks": LM_BLOCKS,
-        "default_block_key": "block_1",
         "trials_per_modality": 10,
         "total_trials": 40,
+        "block_options": EXPERIMENT_3_BLOCKS,
+        "block_keys": EXPERIMENT_3_BLOCK_KEYS,
+        "requires_block": True,
+    },
+    "paradigm_mi": {
+        "code": "MI",
+        "slug": "mi",
+        "label": "MI",
+        "menu_label": "1. MI",
+        "setup_title": "Configuracion de Paradigma MI",
+        "implemented": True,
+        "dataset_slug": "paradigmas/mi",
+        "target_key": "arm_vs_leg",
+        "modalities": ["MI"],
+        "class_keys": ["arm", "leg"],
+        "total_trials_multiplier": 2,
+    },
+    "paradigm_me": {
+        "code": "ME",
+        "slug": "me",
+        "label": "ME",
+        "menu_label": "2. ME",
+        "setup_title": "Configuracion de Paradigma ME",
+        "implemented": True,
+        "dataset_slug": "paradigmas/me",
+        "target_key": "arm_vs_leg",
+        "modalities": ["ME"],
+        "class_keys": ["arm", "leg"],
+        "total_trials_multiplier": 2,
+    },
+    "paradigm_mo": {
+        "code": "MO",
+        "slug": "mo",
+        "label": "MO",
+        "menu_label": "3. MO",
+        "setup_title": "Configuracion de Paradigma MO",
+        "implemented": True,
+        "dataset_slug": "paradigmas/mo",
+        "target_key": "arm_vs_leg",
+        "modalities": ["MO"],
+        "class_keys": ["arm", "leg"],
+        "total_trials_multiplier": 2,
+    },
+    "paradigm_aw": {
+        "code": "AW",
+        "slug": "aw",
+        "label": "AW",
+        "menu_label": "4. AW",
+        "setup_title": "Configuracion de Paradigma AW",
+        "implemented": True,
+        "dataset_slug": "paradigmas/aw",
+        "target_key": "arm_vs_leg",
+        "modalities": ["AW"],
+        "class_keys": ["arm", "leg"],
+        "total_trials_multiplier": 2,
     },
 }
 
-MENU_PROTOCOL_KEYS = [
-    "motor_imagery",
-    "action_words",
-    "lm",
+MAIN_EXPERIMENT_KEYS = [
+    "experiment_1",
+    "experiment_2",
+    "experiment_3",
 ]
+
+PARADIGM_PROTOCOL_KEYS = [
+    "paradigm_mi",
+    "paradigm_me",
+    "paradigm_mo",
+    "paradigm_aw",
+]
+
+MENU_PROTOCOL_KEYS = MAIN_EXPERIMENT_KEYS
 
 
 def get_protocol_config(protocol_key):
@@ -117,8 +181,8 @@ def get_stimulus_gender_config(gender_key):
     return STIMULUS_GENDERS[gender_key]
 
 
-def get_lm_block_config(block_key):
-    if block_key not in LM_BLOCKS:
-        raise ValueError(f"Bloque LM no soportado: {block_key}")
+def get_block_config(block_key):
+    if block_key not in EXPERIMENT_3_BLOCKS:
+        raise ValueError(f"Bloque no soportado: {block_key}")
 
-    return LM_BLOCKS[block_key]
+    return EXPERIMENT_3_BLOCKS[block_key]

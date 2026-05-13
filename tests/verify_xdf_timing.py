@@ -7,9 +7,11 @@ from experiments.trial_sequences import TRIAL_SEQUENCES
 
 
 EXPERIMENT_BY_FILE_PREFIX = {
-    "MI": "motor_imagery",
-    "AW": "action_words",
-    "LM": "lm",
+    "MI-MO-AW": "experiment_2",
+    "MI": "experiment_1",
+    "ME": "paradigm_me",
+    "MO": "paradigm_mo",
+    "AW": "paradigm_aw",
 }
 
 
@@ -51,12 +53,26 @@ def find_latest_xdf():
 
 
 def infer_experiment_key(xdf_path):
-    prefix = xdf_path.name.split("-", 1)[0].upper()
+    path_parts = {part.lower() for part in xdf_path.parts}
+    if "experimento_2" in path_parts:
+        return "experiment_2"
+    if "experimento_3" in path_parts:
+        return "experiment_3"
+
+    filename = xdf_path.name.upper()
+    prefix = next(
+        (
+            candidate
+            for candidate in sorted(EXPERIMENT_BY_FILE_PREFIX, key=len, reverse=True)
+            if filename.startswith(f"{candidate}-")
+        ),
+        None,
+    )
 
     if prefix not in EXPERIMENT_BY_FILE_PREFIX:
         raise ValueError(
             "No se pudo inferir el experimento desde el nombre del XDF. "
-            "Usa --experiment motor_imagery|action_words|lm."
+            "Usa --experiment con una clave disponible en TRIAL_SEQUENCES."
         )
 
     return EXPERIMENT_BY_FILE_PREFIX[prefix]
